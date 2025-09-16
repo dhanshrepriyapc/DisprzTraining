@@ -11058,11 +11058,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "c:\\Users\\dhanshrepriya.p_disp\\calendar\\DisprzTraining\\DisprzTraining\\DisprzTraining.csproj",
+      "projectUniqueName": "C:\\Users\\dhanshrepriya.p_disp\\calendar\\DisprzTraining\\DisprzTraining\\DisprzTraining.csproj",
       "projectName": "DisprzTraining",
-      "projectPath": "c:\\Users\\dhanshrepriya.p_disp\\calendar\\DisprzTraining\\DisprzTraining\\DisprzTraining.csproj",
+      "projectPath": "C:\\Users\\dhanshrepriya.p_disp\\calendar\\DisprzTraining\\DisprzTraining\\DisprzTraining.csproj",
       "packagesPath": "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\",
-      "outputPath": "c:\\Users\\dhanshrepriya.p_disp\\calendar\\DisprzTraining\\DisprzTraining\\obj\\",
+      "outputPath": "C:\\Users\\dhanshrepriya.p_disp\\calendar\\DisprzTraining\\DisprzTraining\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\dhanshrepriya.p_disp\\AppData\\Roaming\\NuGet\\NuGet.Config"

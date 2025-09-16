@@ -6,7 +6,6 @@ namespace DisprzTraining.Models
     {
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-        // This represents the Appointments table in DB
         public DbSet<Appointment> Appointments { get; set; }
     }
 }
