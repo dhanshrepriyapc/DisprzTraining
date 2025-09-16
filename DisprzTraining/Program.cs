@@ -13,6 +13,10 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<AppointmentRepository>();
 builder.Services.AddScoped<AppointmentService>();
 
+builder.Services.AddScoped<UserRepository>();
+builder.Services.AddScoped<UserService>();
+
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -31,6 +35,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 // Use CORS before MapControllers
+app.UseHttpsRedirection(); 
 app.UseCors("AllowReactApp");
 app.UseAuthorization();
 app.MapControllers();

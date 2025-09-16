@@ -1,6 +1,105 @@
+// using DisprzTraining.DataAccess;
+// using DisprzTraining.DTOs;
+// using DisprzTraining.Models;
+
+// namespace DisprzTraining.Business
+// {
+//     public class AppointmentService
+//     {
+//         private readonly AppointmentRepository _repository;
+
+//         //AppointmentRepository is injected → 
+//         // the service doesn’t talk to DB directly, it uses the repo.
+
+//         public AppointmentService(AppointmentRepository repository)
+//         {
+//             _repository = repository;
+//         }
+
+//         public async Task<List<Appointment>> GetAppointmentsAsync()
+//         {
+//             return await _repository.GetAllAsync();
+//         }
+
+//         public async Task<Appointment?> GetAppointmentByIdAsync(int id)
+//         {
+//             return await _repository.GetByIdAsync(id);
+//         }
+//         public async Task<(bool Success, string? Error, Appointment? Created)> CreateAppointmentAsync(AppointmentDto dto)
+//         {
+//             var existing = await _repository.GetAllAsync();
+//             bool conflict = existing.Any(a =>
+//                 dto.StartTime < a.EndTime && dto.EndTime > a.StartTime);
+
+//             if (conflict)
+//                 return (false, "Appointment time conflicts with an existing one.", null);
+
+//             var appointment = new Appointment
+//             {
+//                 Title = dto.Title,
+//                 StartTime = dto.StartTime,
+//                 EndTime = dto.EndTime
+//             };
+
+//             await _repository.AddAsync(appointment);
+
+//             return (true, null, appointment);
+//         }
+
+//         // public async Task<(bool Success, string? Error, Appointment? Created)> CreateAppointmentAsync(AppointmentDto dto)
+//         //     {
+//         //         var existing = await _repository.GetAllAsync();
+//         //         bool conflict = existing.Any(a =>
+//         //             dto.StartTime < a.EndTime && dto.EndTime > a.StartTime);
+
+//         //         if (conflict)
+//         //             return (false, "Appointment time conflicts with an existing one.", null);
+
+//         //         var appointment = new Appointment
+//         //         {
+//         //             Title = dto.Title,
+//         //             StartTime = dto.StartTime,
+//         //             EndTime = dto.EndTime
+//         //         };
+
+//         //         await _repository.AddAsync(appointment);
+
+//         //         return (true, null, appointment);
+//         //     }
+
+//         public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto)
+//         {
+//             var existing = await _repository.GetByIdAsync(id);
+//             if (existing == null) return (false, "Not found");
+
+//             var all = await _repository.GetAllAsync();
+//             bool conflict = all.Any(a =>
+//                 a.Id != id && dto.StartTime < a.EndTime && dto.EndTime > a.StartTime);
+
+//             if (conflict) return (false, "Conflicts with another appointment.");
+
+//             existing.Title = dto.Title;
+//             existing.StartTime = dto.StartTime;
+//             existing.EndTime = dto.EndTime;
+
+//             await _repository.UpdateAsync(existing);
+//             return (true, null);
+//         }
+
+//         public async Task<bool> DeleteAppointmentAsync(int id)
+//         {
+//             var existing = await _repository.GetByIdAsync(id);
+//             if (existing == null) return false;
+
+//             await _repository.DeleteAsync(existing);
+//             return true;
+//         }
+//     }
+// }
 using DisprzTraining.DataAccess;
 using DisprzTraining.DTOs;
 using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace DisprzTraining.Business
 {
@@ -8,91 +107,91 @@ namespace DisprzTraining.Business
     {
         private readonly AppointmentRepository _repository;
 
-        //AppointmentRepository is injected → 
-        // the service doesn’t talk to DB directly, it uses the repo.
-
         public AppointmentService(AppointmentRepository repository)
         {
             _repository = repository;
         }
 
-        public async Task<List<Appointment>> GetAppointmentsAsync()
+        // GET all appointments for a specific user
+        public async Task<List<AppointmentDto>> GetAppointmentsForUserAsync(int userId)
         {
-            return await _repository.GetAllAsync();
+            var appointments = await _repository.GetByUserIdAsync(userId);
+
+            return appointments.Select(a => new AppointmentDto
+            {
+                Id = a.Id,
+                Title = a.Title,
+                StartTime = a.StartTime,
+                EndTime = a.EndTime,
+                UserId = a.UserId
+            }).ToList();
         }
 
+        // GET appointment by ID
         public async Task<Appointment?> GetAppointmentByIdAsync(int id)
         {
             return await _repository.GetByIdAsync(id);
         }
-        public async Task<(bool Success, string? Error, Appointment? Created)> CreateAppointmentAsync(AppointmentDto dto)
+
+        // CREATE new appointment for a specific user
+        public async Task<(bool Success, string? Error, Appointment Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
         {
-            var existing = await _repository.GetAllAsync();
-            bool conflict = existing.Any(a =>
-                dto.StartTime < a.EndTime && dto.EndTime > a.StartTime);
-
-            if (conflict)
-                return (false, "Appointment time conflicts with an existing one.", null);
-
-            var appointment = new Appointment
+            try
             {
-                Title = dto.Title,
-                StartTime = dto.StartTime,
-                EndTime = dto.EndTime
-            };
+                // Optional: check for overlapping appointments for the same user
+                var overlap = await _repository.GetByUserIdAsync(userId);
+                if (overlap.Any(a => dto.StartTime < a.EndTime && dto.EndTime > a.StartTime))
+                    return (false, "Appointment time overlaps with existing appointment", null!);
 
-            await _repository.AddAsync(appointment);
+                var appointment = new Appointment
+                {
+                    Title = dto.Title,
+                    StartTime = dto.StartTime,
+                    EndTime = dto.EndTime,
+                    UserId = userId
+                };
 
-            return (true, null, appointment);
+                await _repository.AddAsync(appointment);
+                return (true, null, appointment);
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message, null!);
+            }
         }
 
-        // public async Task<(bool Success, string? Error, Appointment? Created)> CreateAppointmentAsync(AppointmentDto dto)
-        //     {
-        //         var existing = await _repository.GetAllAsync();
-        //         bool conflict = existing.Any(a =>
-        //             dto.StartTime < a.EndTime && dto.EndTime > a.StartTime);
-
-        //         if (conflict)
-        //             return (false, "Appointment time conflicts with an existing one.", null);
-
-        //         var appointment = new Appointment
-        //         {
-        //             Title = dto.Title,
-        //             StartTime = dto.StartTime,
-        //             EndTime = dto.EndTime
-        //         };
-
-        //         await _repository.AddAsync(appointment);
-
-        //         return (true, null, appointment);
-        //     }
-
-        public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto)
+        // UPDATE appointment (only by the owner)
+        public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto, int userId)
         {
-            var existing = await _repository.GetByIdAsync(id);
-            if (existing == null) return (false, "Not found");
+            var appointment = await _repository.GetByIdAsync(id);
+            if (appointment == null) return (false, "Not found");
+            if (appointment.UserId != userId) return (false, "Unauthorized");
 
-            var all = await _repository.GetAllAsync();
-            bool conflict = all.Any(a =>
-                a.Id != id && dto.StartTime < a.EndTime && dto.EndTime > a.StartTime);
+            // Optional: check overlapping
+            var userAppointments = await _repository.GetByUserIdAsync(userId);
+            if (userAppointments.Any(a => a.Id != id && dto.StartTime < a.EndTime && dto.EndTime > a.StartTime))
+                return (false, "Appointment time overlaps with existing appointment");
 
-            if (conflict) return (false, "Conflicts with another appointment.");
+            appointment.Title = dto.Title;
+            appointment.StartTime = dto.StartTime;
+            appointment.EndTime = dto.EndTime;
 
-            existing.Title = dto.Title;
-            existing.StartTime = dto.StartTime;
-            existing.EndTime = dto.EndTime;
-
-            await _repository.UpdateAsync(existing);
+            await _repository.UpdateAsync(appointment);
             return (true, null);
         }
 
-        public async Task<bool> DeleteAppointmentAsync(int id)
-        {
-            var existing = await _repository.GetByIdAsync(id);
-            if (existing == null) return false;
+        // In AppointmentRepositor
 
-            await _repository.DeleteAsync(existing);
-            return true;
+
+        // DELETE appointment (only by the owner)
+        public async Task<(bool Success, string? Error)> DeleteAppointmentAsync(int id, int userId)
+        {
+            var appointment = await _repository.GetByIdAsync(id);
+            if (appointment == null) return (false, "Not found");
+            if (appointment.UserId != userId) return (false, "Unauthorized");
+
+            await _repository.DeleteAsync(appointment);
+            return (true, null);
         }
     }
 }

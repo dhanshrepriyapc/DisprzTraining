@@ -1,4 +1,84 @@
-﻿using DisprzTraining.Business;
+﻿// using DisprzTraining.Business;
+// using DisprzTraining.DTOs;
+// using Microsoft.AspNetCore.Mvc;
+
+// namespace DisprzTraining.Controllers
+// {
+//     [Route("api/[controller]")]
+//     [ApiController]
+//     public class AppointmentsController : ControllerBase
+//     {
+//         private readonly AppointmentService _service;
+//         // builder.Services.AddScoped<AppointmentService>();
+//         // DI injection 
+
+//         public AppointmentsController(AppointmentService service)
+//         {
+//             _service = service;
+//         }
+
+//         [HttpGet]
+//         public async Task<IActionResult> GetAppointments()
+//         {
+//             var result = await _service.GetAppointmentsAsync();
+//             return Ok(result);
+//         }
+
+//         [HttpPost]
+//         public async Task<IActionResult> CreateAppointment([FromBody] AppointmentDto dto)
+//         {
+//             var (success, error, appointment) = await _service.CreateAppointmentAsync(dto);
+
+//             if (!success)
+//                 return Conflict(new { message = error });
+
+//             return CreatedAtAction(
+//                 nameof(GetById),       // the GET endpoint
+//                 new { id = appointment.Id },     // route values
+//                 appointment                       // response body
+//             );
+//         }
+
+//         [HttpGet("{id}")]
+//         public async Task<ActionResult<AppointmentDto>> GetById(int id)
+//         {
+//             var appointment = await _service.GetAppointmentByIdAsync(id);
+//             if (appointment == null) return NotFound();
+//             var dto = new AppointmentDto
+//             {
+//                 Id = appointment.Id,
+//                 Title = appointment.Title,
+//                 StartTime = appointment.StartTime,
+//                 EndTime = appointment.EndTime
+//             };
+//             return Ok(appointment);
+//         }
+
+
+//         [HttpPut("{id}")]
+//         public async Task<IActionResult> UpdateAppointment(int id, [FromBody] AppointmentDto dto)
+//         {
+//             var (success, error) = await _service.UpdateAppointmentAsync(id, dto);
+//             if (!success)
+//             {
+//                 if (error == "Not found") return NotFound();
+//                 return Conflict(new { message = error });
+//             }
+
+//             return Ok(new { message = "Appointment updated successfully" });
+//         }
+
+//         [HttpDelete("{id}")]
+//         public async Task<IActionResult> DeleteAppointment(int id)
+//         {
+//             var success = await _service.DeleteAppointmentAsync(id);
+//             if (!success) return NotFound();
+
+//             return NoContent();
+//         }
+//     }
+// }
+using DisprzTraining.Business;
 using DisprzTraining.DTOs;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,62 +97,88 @@ namespace DisprzTraining.Controllers
             _service = service;
         }
 
+        // GET: api/appointments?userId=1
         [HttpGet]
-        public async Task<IActionResult> GetAppointments()
+        public async Task<IActionResult> GetAppointments([FromQuery] int userId)
         {
-            var result = await _service.GetAppointmentsAsync();
+            if (userId <= 0)
+                return BadRequest(new { message = "Invalid user ID" });
+
+            var result = await _service.GetAppointmentsForUserAsync(userId);
             return Ok(result);
         }
 
+        // POST: api/appointments?userId=1
         [HttpPost]
-        public async Task<IActionResult> CreateAppointment([FromBody] AppointmentDto dto)
+        public async Task<IActionResult> CreateAppointment([FromBody] AppointmentDto dto, [FromQuery] int userId)
         {
-            var (success, error, appointment) = await _service.CreateAppointmentAsync(dto);
+            if (userId <= 0)
+                return BadRequest(new { message = "Invalid user ID" });
+
+            var (success, error, appointment) = await _service.CreateAppointmentAsync(dto, userId);
 
             if (!success)
                 return Conflict(new { message = error });
 
             return CreatedAtAction(
-                nameof(GetById),       // the GET endpoint
-                new { id = appointment.Id },     // route values
-                appointment                       // response body
+                nameof(GetById),
+                new { id = appointment.Id },
+                appointment
             );
         }
 
+        // GET: api/appointments/5
         [HttpGet("{id}")]
         public async Task<ActionResult<AppointmentDto>> GetById(int id)
         {
             var appointment = await _service.GetAppointmentByIdAsync(id);
             if (appointment == null) return NotFound();
+
             var dto = new AppointmentDto
             {
                 Id = appointment.Id,
                 Title = appointment.Title,
                 StartTime = appointment.StartTime,
-                EndTime = appointment.EndTime
+                EndTime = appointment.EndTime,
+                UserId = appointment.UserId
             };
-            return Ok(appointment);
+
+            return Ok(dto);
         }
 
-
+        // PUT: api/appointments/5?userId=1
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateAppointment(int id, [FromBody] AppointmentDto dto)
+        public async Task<IActionResult> UpdateAppointment(int id, [FromBody] AppointmentDto dto, [FromQuery] int userId)
         {
-            var (success, error) = await _service.UpdateAppointmentAsync(id, dto);
+            if (userId <= 0)
+                return BadRequest(new { message = "Invalid user ID" });
+
+            var (success, error) = await _service.UpdateAppointmentAsync(id, dto, userId);
+
             if (!success)
             {
                 if (error == "Not found") return NotFound();
+                if (error == "Unauthorized") return Unauthorized(new { message = "Cannot edit another user's appointment" });
                 return Conflict(new { message = error });
             }
 
             return Ok(new { message = "Appointment updated successfully" });
         }
 
+        // DELETE: api/appointments/5?userId=1
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteAppointment(int id)
+        public async Task<IActionResult> DeleteAppointment(int id, [FromQuery] int userId)
         {
-            var success = await _service.DeleteAppointmentAsync(id);
-            if (!success) return NotFound();
+            if (userId <= 0)
+                return BadRequest(new { message = "Invalid user ID" });
+
+            var (success, error) = await _service.DeleteAppointmentAsync(id, userId);
+
+            if (!success)
+            {
+                if (error == "Not found") return NotFound();
+                if (error == "Unauthorized") return Unauthorized(new { message = "Cannot delete another user's appointment" });
+            }
 
             return NoContent();
         }
