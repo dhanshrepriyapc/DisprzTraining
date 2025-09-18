@@ -30,7 +30,7 @@ namespace DisprzTraining.Tests
             { 
                 new AppointmentDto { Id = 1, Title = "Meeting" } 
             };
-            mockService.Setup(s => s.GetAppointmentsForUserAsync(1))
+            mockService.Setup(a => a.GetAppointmentsForUserAsync(1))
                        .ReturnsAsync(fakeAppointments);
 
             var controller = new AppointmentsController(mockService.Object);

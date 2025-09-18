@@ -7,15 +7,15 @@ namespace DisprzTraining.Business
 {
     public class AppointmentService : IAppointmentService
     {
-        private readonly AppointmentRepository _repository;
+        private readonly IAppointmentRepository _repository;
 
-        public AppointmentService(AppointmentRepository repository)
+        public AppointmentService(IAppointmentRepository repository)
         {
             _repository = repository;
         }
 
         // GET all appointments for a specific user
-        virtual public async Task<List<AppointmentDto>> GetAppointmentsForUserAsync(int userId)
+         public async Task<List<AppointmentDto>> GetAppointmentsForUserAsync(int userId)
         {
             var appointments = await _repository.GetByUserIdAsync(userId);
 
@@ -30,13 +30,13 @@ namespace DisprzTraining.Business
         }
 
         // GET appointment by ID
-        virtual public async Task<Appointment?> GetAppointmentByIdAsync(int id)
+         public async Task<Appointment?> GetAppointmentByIdAsync(int id)
         {
             return await _repository.GetByIdAsync(id);
         }
 
         // CREATE new appointment for a specific user
-        virtual public async Task<(bool Success, string? Error, Appointment Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
+         public async Task<(bool Success, string? Error, Appointment Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
         {
             try
             {
@@ -63,7 +63,7 @@ namespace DisprzTraining.Business
         }
 
         // UPDATE appointment (only by the owner)
-        virtual public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto, int userId)
+         public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto, int userId)
         {
             var appointment = await _repository.GetByIdAsync(id);
             if (appointment == null) return (false, "Not found");
@@ -86,7 +86,7 @@ namespace DisprzTraining.Business
 
 
         // DELETE appointment (only by the owner)
-        virtual public async Task<(bool Success, string? Error)> DeleteAppointmentAsync(int id, int userId)
+         public async Task<(bool Success, string? Error)> DeleteAppointmentAsync(int id, int userId)
         {
             var appointment = await _repository.GetByIdAsync(id);
             if (appointment == null) return (false, "Not found");

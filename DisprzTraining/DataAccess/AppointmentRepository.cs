@@ -1,9 +1,8 @@
 using DisprzTraining.Models;
 using Microsoft.EntityFrameworkCore;
-
 namespace DisprzTraining.DataAccess
 {
-    public class AppointmentRepository
+    public class AppointmentRepository : IAppointmentRepository
     {
         private readonly AppDbContext _context;
 
