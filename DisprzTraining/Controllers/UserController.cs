@@ -14,7 +14,8 @@ namespace DisprzTraining.Controllers
         {
             _service = service;
         }
-
+        
+        // Login user - api/users/login
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto dto)
         {
