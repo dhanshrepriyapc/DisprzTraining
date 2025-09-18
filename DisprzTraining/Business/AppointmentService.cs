@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DisprzTraining.Business
 {
-    public class AppointmentService
+    public class AppointmentService : IAppointmentService
     {
         private readonly AppointmentRepository _repository;
 
@@ -15,7 +15,7 @@ namespace DisprzTraining.Business
         }
 
         // GET all appointments for a specific user
-        public async Task<List<AppointmentDto>> GetAppointmentsForUserAsync(int userId)
+        virtual public async Task<List<AppointmentDto>> GetAppointmentsForUserAsync(int userId)
         {
             var appointments = await _repository.GetByUserIdAsync(userId);
 
@@ -30,13 +30,13 @@ namespace DisprzTraining.Business
         }
 
         // GET appointment by ID
-        public async Task<Appointment?> GetAppointmentByIdAsync(int id)
+        virtual public async Task<Appointment?> GetAppointmentByIdAsync(int id)
         {
             return await _repository.GetByIdAsync(id);
         }
 
         // CREATE new appointment for a specific user
-        public async Task<(bool Success, string? Error, Appointment Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
+        virtual public async Task<(bool Success, string? Error, Appointment Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
         {
             try
             {
@@ -63,7 +63,7 @@ namespace DisprzTraining.Business
         }
 
         // UPDATE appointment (only by the owner)
-        public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto, int userId)
+        virtual public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto, int userId)
         {
             var appointment = await _repository.GetByIdAsync(id);
             if (appointment == null) return (false, "Not found");
@@ -86,7 +86,7 @@ namespace DisprzTraining.Business
 
 
         // DELETE appointment (only by the owner)
-        public async Task<(bool Success, string? Error)> DeleteAppointmentAsync(int id, int userId)
+        virtual public async Task<(bool Success, string? Error)> DeleteAppointmentAsync(int id, int userId)
         {
             var appointment = await _repository.GetByIdAsync(id);
             if (appointment == null) return (false, "Not found");
