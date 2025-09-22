@@ -12,19 +12,49 @@ namespace DisprzTraining.Controllers
     public class AppointmentsController : ControllerBase
     {
         private readonly IAppointmentService _service;
-        private static readonly TimeZoneInfo IST = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
 
         public AppointmentsController(IAppointmentService service)
         {
             _service = service;
         }
 
-        // Helper to get UserId from JWT claims
+        // Helper: get user ID from JWT
         private int GetUserId() => int.Parse(User.FindFirstValue("id")!);
 
-        // Helper to normalize to IST
-        private DateTime ToIst(DateTime dt) =>
-            TimeZoneInfo.ConvertTimeFromUtc(dt.ToUniversalTime(), IST);
+        // Helper: get user's TimeZoneId from JWT (or user profile)
+        private string GetUserTimeZoneId() 
+            {
+                var timeZoneId = User.FindFirstValue("timeZoneId") ?? "UTC";
+                Console.WriteLine($"GetUserTimeZoneId: {timeZoneId}");
+                return timeZoneId;
+            }
+
+        // Convert UTC to user's local time
+        // Convert UTC to user's local time
+        private DateTime ToUserTime(DateTime utcTime)
+        {
+            var timeZoneId = GetUserTimeZoneId();
+            Console.WriteLine($"Converting UTC {utcTime} to timezone {timeZoneId}");
+            
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            var result = TimeZoneInfo.ConvertTimeFromUtc(utcTime, tz);
+            
+            Console.WriteLine($"Result: {result}");
+            return result;
+        }
+
+        // Convert user's local time to UTC
+        private DateTime ToUtc(DateTime userTime)
+        {
+            var timeZoneId = GetUserTimeZoneId();
+            Console.WriteLine($"Converting local time {userTime} from timezone {timeZoneId} to UTC");
+            
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            var result = TimeZoneInfo.ConvertTimeToUtc(userTime, tz);
+            
+            Console.WriteLine($"UTC Result: {result}");
+            return result;
+        }
 
         // GET: api/appointments/user
         [HttpGet("user")]
@@ -33,12 +63,12 @@ namespace DisprzTraining.Controllers
             var userId = GetUserId();
             var appointments = await _service.GetAppointmentsForUserAsync(userId);
 
-            // Convert all times to IST before returning
-            foreach (var appt in appointments)
+            // Convert each appointment to user time
+            appointments.ForEach(a =>
             {
-                appt.StartTime = ToIst(appt.StartTime);
-                appt.EndTime = ToIst(appt.EndTime);
-            }
+                a.StartTime = ToUserTime(a.StartTime);
+                a.EndTime = ToUserTime(a.EndTime);
+            });
 
             return Ok(appointments);
         }
@@ -49,30 +79,28 @@ namespace DisprzTraining.Controllers
         {
             var userId = GetUserId();
 
-            // dto.StartTime = ToIst(dto.StartTime);
-            // dto.EndTime = ToIst(dto.EndTime);
-
             if (dto.StartTime >= dto.EndTime)
                 return BadRequest(new { message = "StartTime must be before EndTime" });
+
+            // Convert input times to UTC
+            dto.StartTime = ToUtc(dto.StartTime);
+            dto.EndTime = ToUtc(dto.EndTime);
 
             var (success, error, appointment) = await _service.CreateAppointmentAsync(dto, userId);
             if (!success) return Conflict(new { message = error });
 
-            appointment.StartTime = ToIst(appointment.StartTime);
-            appointment.EndTime = ToIst(appointment.EndTime);
-
+            // Convert times back to user local
             var newdto = new AppointmentDto
-                {
-                    Id = appointment.Id,
-                    Title = appointment.Title,
-                    StartTime = appointment.StartTime,
-                    EndTime = appointment.EndTime,
-                    Type = appointment.Type,
-                    ColorCode = appointment.ColorCode
-                };
+            {
+                Id = appointment.Id,
+                Title = appointment.Title,
+                StartTime = ToUserTime(appointment.StartTime),
+                EndTime = ToUserTime(appointment.EndTime),
+                Type = appointment.Type,
+                ColorCode = appointment.ColorCode
+            };
 
-return CreatedAtAction(nameof(GetUserAppointmentById), new { id = newdto.Id }, newdto);
-
+            return CreatedAtAction(nameof(GetUserAppointmentById), new { id = newdto.Id }, newdto);
         }
 
         // GET: api/appointments/user/5
@@ -85,15 +113,12 @@ return CreatedAtAction(nameof(GetUserAppointmentById), new { id = newdto.Id }, n
             if (appointment == null || appointment.UserId != userId)
                 return NotFound(new { message = "Appointment not found" });
 
-            appointment.StartTime = ToIst(appointment.StartTime);
-            appointment.EndTime = ToIst(appointment.EndTime);
-
             var dto = new AppointmentDto
             {
                 Id = appointment.Id,
                 Title = appointment.Title,
-                StartTime = appointment.StartTime,
-                EndTime = appointment.EndTime,
+                StartTime = ToUserTime(appointment.StartTime),
+                EndTime = ToUserTime(appointment.EndTime),
                 Type = appointment.Type,
                 ColorCode = appointment.ColorCode
             };
@@ -107,11 +132,12 @@ return CreatedAtAction(nameof(GetUserAppointmentById), new { id = newdto.Id }, n
         {
             var userId = GetUserId();
 
-            dto.StartTime = ToIst(dto.StartTime);
-            dto.EndTime = ToIst(dto.EndTime);
-
             if (dto.StartTime >= dto.EndTime)
                 return BadRequest(new { message = "StartTime must be before EndTime" });
+
+            // Convert to UTC
+            dto.StartTime = ToUtc(dto.StartTime);
+            dto.EndTime = ToUtc(dto.EndTime);
 
             var (success, error) = await _service.UpdateAppointmentAsync(id, dto, userId);
             if (!success)
@@ -147,11 +173,12 @@ return CreatedAtAction(nameof(GetUserAppointmentById), new { id = newdto.Id }, n
             var userId = GetUserId();
             var results = await _service.SearchAppointmentsAsync(keyword, userId);
 
-            foreach (var appt in results)
+            // Convert to user local time
+            results.ForEach(a =>
             {
-                appt.StartTime = ToIst(appt.StartTime);
-                appt.EndTime = ToIst(appt.EndTime);
-            }
+                a.StartTime = ToUserTime(a.StartTime);
+                a.EndTime = ToUserTime(a.EndTime);
+            });
 
             return Ok(results);
         }
@@ -180,14 +207,19 @@ return CreatedAtAction(nameof(GetUserAppointmentById), new { id = newdto.Id }, n
             if (start > end)
                 return BadRequest(new { message = "Start date must be before end date" });
 
+            // Convert query params from user local → UTC
+            start = ToUtc(start);
+            end = ToUtc(end);
+
             var userId = GetUserId();
             var appointments = await _service.GetRecurringAppointmentsAsync(userId, start, end);
 
-            foreach (var appt in appointments)
+            // Convert back to user local
+            appointments.ForEach(a =>
             {
-                appt.StartTime = ToIst(appt.StartTime);
-                appt.EndTime = ToIst(appt.EndTime);
-            }
+                a.StartTime = ToUserTime(a.StartTime);
+                a.EndTime = ToUserTime(a.EndTime);
+            });
 
             return Ok(appointments);
         }

@@ -2,7 +2,7 @@
 # User login and create recurring appointment
 # -------------------------------
 
-#Login
+# Login
 $authUrl = "http://localhost:5169/api/users/login"
 $loginBody = @{
     username = "suratha"
@@ -13,20 +13,20 @@ $loginResponse = Invoke-RestMethod -Uri $authUrl -Method Post -Body $loginBody -
 $token = $loginResponse.token
 if (-not $token) { throw "Login failed: token not returned" }
 
-Write-Host " Login successful, token acquired."
+Write-Host "Login successful, token acquired."
 
 # Create a recurring appointment (Daily from 20 Sep to 26 Sep, 1 PM - 2 PM)
 $appointmentsUrl = "http://localhost:5169/api/appointments/user"
 
 $apptBody = @{
-    Title             = "Daily Meeting"
-    StartTime         = "2025-09-20T13:00:00"
-    EndTime           = "2025-09-20T14:00:00"
-    Type              = "Meeting"
-    ColorCode         = "#1976d2"
-    Recurrence        = 1                     # 0=None, 1=Daily, 2=Weekly, 3=Monthly
-    RecurrenceInterval= 1                     # Every 1 day
-    RecurrenceEndDate = "2025-09-26T14:00:00"
+    Title              = "Daily Meeting"
+    StartTime          = "2025-09-20T13:00:00"
+    EndTime            = "2025-09-20T14:00:00"
+    Type               = "Meeting"
+    ColorCode          = "#1976d2"
+    Recurrence         = 1       # 0=None, 1=Daily, 2=Weekly, 3=Monthly
+    RecurrenceInterval = 1       # Every 1 day
+    RecurrenceEndDate  = "2025-09-26T14:00:00"
 } | ConvertTo-Json
 
 try {
@@ -42,5 +42,5 @@ try {
     Write-Host "All appointments for user:"
     $allAppointments | ConvertTo-Json -Depth 5
 } catch {
-    Write-Warning "⚠ Failed to retrieve appointments: $($_.Exception.Message)"
+    Write-Warning "Failed to retrieve appointments: $($_.Exception.Message)"
 }

@@ -29,10 +29,12 @@ namespace DisprzTraining.Business
             // Verify hashed password
              return user;
         }
-
-        // Generate JWT token for authenticated user
+        
+// Generate JWT token for authenticated user
         public string GenerateJwtToken(User user)
         {
+            Console.WriteLine($"Generating JWT for user: {user.Username}, TimeZone: {user.TimeZoneId}");
+
             var secretKey = _config["Jwt:Key"] ?? "ThisIsAReallyLongSuperSecretKey123!";
             if (secretKey.Length < 32)
                 secretKey = secretKey.PadRight(32, 'X');
@@ -42,10 +44,13 @@ namespace DisprzTraining.Business
 
             var claims = new[]
             {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Username),
-                new Claim("id", user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-            };
+        new Claim(JwtRegisteredClaimNames.Sub, user.Username),
+        new Claim("id", user.Id.ToString()),
+        new Claim("timeZoneId", user.TimeZoneId), // This should now include America/Chihuahua
+        new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+         };
+
+            Console.WriteLine($"JWT Claims: {string.Join(", ", claims.Select(c => $"{c.Type}={c.Value}"))}");
 
             var token = new JwtSecurityToken(
                 issuer: _config["Jwt:Issuer"] ?? "MyApp",
@@ -55,8 +60,12 @@ namespace DisprzTraining.Business
                 signingCredentials: creds
             );
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
+            var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+            Console.WriteLine($"Generated JWT token: {tokenString}");
+
+            return tokenString;
         }
+
 
         // Register new user
         public async Task<User> RegisterAsync(string username, string password, string? timeZoneId = null)

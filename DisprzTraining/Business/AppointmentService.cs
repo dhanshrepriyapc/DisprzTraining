@@ -8,7 +8,6 @@ namespace DisprzTraining.Business
     public class AppointmentService : IAppointmentService
     {
         private readonly IAppointmentRepository _repository;
-        private static readonly TimeZoneInfo IST = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
 
         public AppointmentService(IAppointmentRepository repository)
         {
@@ -18,20 +17,8 @@ namespace DisprzTraining.Business
         // GET all appointments for a specific user
         public async Task<List<AppointmentDto>> GetAppointmentsForUserAsync(int userId)
         {
-            var user = await _repository.GetUserByIdAsync(userId);
             var appointments = await _repository.GetByUserIdAsync(userId);
-
-            // If user has a specific timezone, use it; otherwise default IST
-            var tzId = string.IsNullOrEmpty(user?.TimeZoneId) ? IST.Id : user.TimeZoneId;
-            var userTimeZone = TimeZoneInfo.FindSystemTimeZoneById(tzId);
-
-            return appointments.Select(a =>
-            {
-                var dto = MapToDto(a);
-                dto.StartTime = TimeZoneInfo.ConvertTimeFromUtc(a.StartTime, userTimeZone);
-                dto.EndTime = TimeZoneInfo.ConvertTimeFromUtc(a.EndTime, userTimeZone);
-                return dto;
-            }).ToList();
+            return appointments.Select(MapToDto).ToList();
         }
 
         // GET appointment by ID
@@ -40,46 +27,138 @@ namespace DisprzTraining.Business
             return await _repository.GetByIdAsync(id);
         }
 
-        // CREATE new appointment for a specific user
-        public async Task<(bool Success, string? Error, Appointment? Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
+        // Helper to safely add months
+        private DateTime AddMonthsSafely(DateTime dt, int months)
         {
-            try
+            int targetMonth = dt.Month + months;
+            int targetYear = dt.Year + (targetMonth - 1) / 12;
+            targetMonth = ((targetMonth - 1) % 12) + 1;
+            int day = Math.Min(dt.Day, DateTime.DaysInMonth(targetYear, targetMonth));
+            return new DateTime(targetYear, targetMonth, day, dt.Hour, dt.Minute, dt.Second);
+        }
+
+        // CREATE new appointment for a specific user (materialized recurring appointments)
+public async Task<(bool Success, string? Error, Appointment? Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
+{
+    try
+    {
+        Console.WriteLine($"=== CREATE APPOINTMENT DEBUG ===");
+        Console.WriteLine($"DTO Recurrence: {dto.Recurrence}");
+        Console.WriteLine($"DTO RecurrenceInterval: {dto.RecurrenceInterval}");
+        Console.WriteLine($"DTO RecurrenceEndDate: {dto.RecurrenceEndDate}");
+        Console.WriteLine($"Start Time: {dto.StartTime}");
+        Console.WriteLine($"End Time: {dto.EndTime}");
+
+        var start = dto.StartTime;
+        var end = dto.EndTime;
+        if (start >= end)
+            return (false, "StartTime must be before EndTime", null);
+
+        var existingAppointments = await _repository.GetByUserIdAsync(userId);
+        bool Overlaps(DateTime s1, DateTime e1, DateTime s2, DateTime e2) => s1 < e2 && e1 > s2;
+
+        var createdAppointments = new List<Appointment>();
+
+        if (dto.Recurrence != AppointmentDto.RecurrenceType.None)
+        {
+            var occurrence = start;
+            var recurrenceEnd = dto.RecurrenceEndDate ?? start.AddMonths(3);
+            var interval = dto.RecurrenceInterval ?? 1;
+
+            Console.WriteLine($"Creating recurring appointments from {occurrence} until {recurrenceEnd} with interval {interval}");
+
+            int maxOccurrences = 100; // Safety limit
+            int createdCount = 0;
+
+            while (occurrence.Date <= recurrenceEnd.Date && createdCount < maxOccurrences)
             {
-                // Store everything in UTC internally
-                var startUtc = dto.StartTime.ToUniversalTime();
-                var endUtc = dto.EndTime.ToUniversalTime();
+                var occurrenceEnd = occurrence + (end - start);
+                
+                Console.WriteLine($"Creating occurrence #{createdCount + 1}: {occurrence} to {occurrenceEnd}");
 
-                if (startUtc < DateTime.UtcNow || endUtc < DateTime.UtcNow)
-                    return (false, "Cannot book appointments in the past", null);
+                // Check overlap
+                foreach (var existing in existingAppointments)
+                {
+                    if (Overlaps(occurrence, occurrenceEnd, existing.StartTime, existing.EndTime))
+                        return (false, $"Recurring appointment on {occurrence:yyyy-MM-dd} overlaps with existing appointment", null);
+                }
 
-                var existingAppointments = await _repository.GetByUserIdAsync(userId);
-                if (existingAppointments.Any(a => startUtc < a.EndTime && endUtc > a.StartTime))
-                    return (false, "Appointment time overlaps with existing appointment", null);
-
+                // Create appointment
                 var appointment = new Appointment
                 {
                     Title = dto.Title,
-                    StartTime = startUtc,
-                    EndTime = endUtc,
+                    StartTime = occurrence,
+                    EndTime = occurrenceEnd,
                     UserId = userId,
                     Description = dto.Description,
                     Location = dto.Location,
                     Attendees = dto.Attendees,
                     Type = dto.Type,
                     ColorCode = dto.ColorCode,
-                    Recurrence = (RecurrenceType)dto.Recurrence,
-                    RecurrenceInterval = dto.RecurrenceInterval,
-                    RecurrenceEndDate = dto.RecurrenceEndDate
+                    Recurrence = RecurrenceType.None,
+                    RecurrenceInterval = null,
+                    RecurrenceEndDate = null
                 };
 
                 await _repository.AddAsync(appointment);
-                return (true, null, appointment);
+                createdAppointments.Add(appointment);
+                createdCount++;
+
+                // Move to next occurrence
+                var nextOccurrence = dto.Recurrence switch
+                {
+                    AppointmentDto.RecurrenceType.Daily => occurrence.AddDays(interval),
+                    AppointmentDto.RecurrenceType.Weekly => occurrence.AddDays(7 * interval),
+                    AppointmentDto.RecurrenceType.Monthly => AddMonthsSafely(occurrence, interval),
+                    _ => recurrenceEnd.AddDays(1)
+                };
+
+                if (nextOccurrence <= occurrence)
+                {
+                    Console.WriteLine("Breaking: Next occurrence is not after current");
+                    break;
+                }
+
+                occurrence = nextOccurrence;
             }
-            catch (Exception ex)
-            {
-                return (false, ex.Message, null);
-            }
+
+            Console.WriteLine($"Created {createdAppointments.Count} recurring appointments");
+
+            if (createdAppointments.Count == 0)
+                return (false, "No appointments created - check your recurrence settings", null);
+
+            return (true, null, createdAppointments.First());
         }
+        else
+        {
+            // Single appointment
+            if (existingAppointments.Any(a => Overlaps(start, end, a.StartTime, a.EndTime)))
+                return (false, "Appointment time overlaps with existing appointment", null);
+
+            var appointment = new Appointment
+            {
+                Title = dto.Title,
+                StartTime = start,
+                EndTime = end,
+                UserId = userId,
+                Description = dto.Description,
+                Location = dto.Location,
+                Attendees = dto.Attendees,
+                Type = dto.Type,
+                ColorCode = dto.ColorCode,
+                Recurrence = RecurrenceType.None
+            };
+
+            await _repository.AddAsync(appointment);
+            return (true, null, appointment);
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error creating appointment: {ex.Message}");
+        return (false, ex.Message, null);
+    }
+}
 
         // UPDATE appointment
         public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto, int userId)
@@ -88,19 +167,19 @@ namespace DisprzTraining.Business
             if (appointment == null) return (false, "Not found");
             if (appointment.UserId != userId) return (false, "Unauthorized");
 
-            var startUtc = dto.StartTime.ToUniversalTime();
-            var endUtc = dto.EndTime.ToUniversalTime();
+            var start = dto.StartTime;
+            var end = dto.EndTime;
 
-            if (startUtc < DateTime.UtcNow || endUtc < DateTime.UtcNow)
-                return (false, "Cannot set appointments in the past");
+            if (start >= end)
+                return (false, "StartTime must be before EndTime");
 
             var userAppointments = await _repository.GetByUserIdAsync(userId);
-            if (userAppointments.Any(a => a.Id != id && startUtc < a.EndTime && endUtc > a.StartTime))
+            if (userAppointments.Any(a => a.Id != id && start < a.EndTime && end > a.StartTime))
                 return (false, "Appointment time overlaps with existing appointment");
 
             appointment.Title = dto.Title;
-            appointment.StartTime = startUtc;
-            appointment.EndTime = endUtc;
+            appointment.StartTime = start;
+            appointment.EndTime = end;
             appointment.Description = dto.Description;
             appointment.Location = dto.Location;
             appointment.Attendees = dto.Attendees;
@@ -149,61 +228,16 @@ namespace DisprzTraining.Business
             return (true, null);
         }
 
-      // GET recurring appointments
-public async Task<List<AppointmentDto>> GetRecurringAppointmentsAsync(int userId, DateTime start, DateTime end)
-{
-    var user = await _repository.GetUserByIdAsync(userId);
-    var tzId = string.IsNullOrEmpty(user?.TimeZoneId) ? IST.Id : user.TimeZoneId;
-    var userTimeZone = TimeZoneInfo.FindSystemTimeZoneById(tzId);
-
-    var appointments = await _repository.GetByUserIdAsync(userId);
-    var result = new List<AppointmentDto>();
-
-    foreach (var a in appointments)
-    {
-        // Non-recurring appointments
-        if (a.Recurrence == RecurrenceType.None)
+        // GET recurring appointments (simplified for materialized occurrences)
+        public async Task<List<AppointmentDto>> GetRecurringAppointmentsAsync(int userId, DateTime start, DateTime end)
         {
-            if (a.StartTime <= end && a.EndTime >= start) // overlaps with range
-            {
-                var dto = MapToDto(a);
-                dto.StartTime = TimeZoneInfo.ConvertTimeFromUtc(a.StartTime, userTimeZone);
-                dto.EndTime = TimeZoneInfo.ConvertTimeFromUtc(a.EndTime, userTimeZone);
-                result.Add(dto);
-            }
-            continue;
+            var appointments = await _repository.GetByUserIdAsync(userId);
+            return appointments
+                .Where(a => a.StartTime <= end && a.EndTime >= start)
+                .Select(MapToDto)
+                .OrderBy(a => a.StartTime)
+                .ToList();
         }
-
-        // Recurring appointments
-        var occurrence = a.StartTime;
-        var recurrenceEnd = a.RecurrenceEndDate ?? end; // if no end date, limit to 'end'
-
-        while (occurrence <= recurrenceEnd)
-        {
-            var occurrenceEnd = occurrence + (a.EndTime - a.StartTime);
-
-            // Only include occurrences within requested range
-            if (occurrenceEnd >= start && occurrence <= end)
-            {
-                var dto = MapToDto(a);
-                dto.StartTime = TimeZoneInfo.ConvertTimeFromUtc(occurrence, userTimeZone);
-                dto.EndTime = TimeZoneInfo.ConvertTimeFromUtc(occurrenceEnd, userTimeZone);
-                result.Add(dto);
-            }
-
-            // Move to next occurrence based on recurrence type
-            occurrence = a.Recurrence switch
-            {
-                RecurrenceType.Daily => occurrence.AddDays(a.RecurrenceInterval ?? 1),
-                RecurrenceType.Weekly => occurrence.AddDays(7 * (a.RecurrenceInterval ?? 1)),
-                RecurrenceType.Monthly => occurrence.AddMonths(a.RecurrenceInterval ?? 1),
-                _ => recurrenceEnd.AddDays(1) // safety to exit loop
-            };
-        }
-    }
-
-    return result.OrderBy(a => a.StartTime).ToList();
-}
 
         // Map Appointment entity to DTO
         private AppointmentDto MapToDto(Appointment a) => new AppointmentDto
