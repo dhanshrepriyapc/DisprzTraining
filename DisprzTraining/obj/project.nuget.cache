@@ -1,15 +1,17 @@
 {
   "version": 2,
-  "dgSpecHash": "MWDyanxlpc6ECMcr86yX2vA9V/l9Tzqq9lavxDGTjLPMN71ti1Vrn+yPRT2mOk7BKUQTXgiGsbmc3vm53TBzJA==",
+  "dgSpecHash": "Bpfa4YHicqEbxEKlZ5nLRX4jnrHnrpexg/a2dpkuLSJzCjJlNELx3dXgbu3/PYsCcRHfXDvU3VmUQBw2IdBBog==",
   "success": true,
   "projectFilePath": "C:\\Users\\dhanshrepriya.p_disp\\calendar\\DisprzTraining\\DisprzTraining\\DisprzTraining.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\azure.core\\1.35.0\\azure.core.1.35.0.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\azure.identity\\1.10.3\\azure.identity.1.10.3.nupkg.sha512",
+    "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\bcrypt.net-next\\4.0.3\\bcrypt.net-next.4.0.3.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\humanizer.core\\2.14.1\\humanizer.core.2.14.1.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\messagepack\\2.1.152\\messagepack.2.1.152.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\messagepack.annotations\\2.1.152\\messagepack.annotations.2.1.152.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\messagepackanalyzer\\2.1.152\\messagepackanalyzer.2.1.152.nupkg.sha512",
+    "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\microsoft.aspnetcore.authentication.jwtbearer\\7.0.0\\microsoft.aspnetcore.authentication.jwtbearer.7.0.0.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\microsoft.aspnetcore.openapi\\7.0.0\\microsoft.aspnetcore.openapi.7.0.0.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\microsoft.aspnetcore.razor.language\\6.0.0\\microsoft.aspnetcore.razor.language.6.0.0.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\5.0.0\\microsoft.bcl.asyncinterfaces.5.0.0.nupkg.sha512",

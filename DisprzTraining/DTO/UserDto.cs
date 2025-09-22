@@ -4,5 +4,8 @@ namespace DisprzTraining.DTOs
     {
         public int Id { get; set; }
         public string Username { get; set; } = null!;
+
+        // Needed so appointments can be converted properly
+        public string TimeZoneId { get; set; } = TimeZoneInfo.Local.Id;
     }
 }

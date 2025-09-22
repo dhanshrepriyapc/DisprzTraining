@@ -7,9 +7,11 @@ C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\n
 C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\DisprzTraining.pdb
 C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\Azure.Core.dll
 C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\Azure.Identity.dll
+C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\BCrypt.Net-Next.dll
 C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\Humanizer.dll
 C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\MessagePack.dll
 C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\MessagePack.Annotations.dll
+C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\Microsoft.AspNetCore.Authentication.JwtBearer.dll
 C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\Microsoft.AspNetCore.OpenApi.dll
 C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\Microsoft.AspNetCore.Razor.Language.dll
 C:\Users\dhanshrepriya.p_disp\calendar\DisprzTraining\DisprzTraining\bin\Debug\net7.0\Microsoft.Bcl.AsyncInterfaces.dll

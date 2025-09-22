@@ -1,14 +1,38 @@
 ﻿namespace DisprzTraining.Models
 {
-  public class Appointment
-  {
-    public int Id { get; set; }        // Unique ID for the appointment
-    public string Title { get; set; } = string.Empty;  // Name of the appointment
-    public DateTime StartTime { get; set; }  // Start time of the appointment
-    public DateTime EndTime { get; set; }    // End time of the appointment
-                                             // Time of the appointment
-      // New fields for user relationship
-    public int UserId { get; set; }
-    public User User { get; set; }
+    public enum RecurrenceType
+    {
+        None,
+        Daily,
+        Weekly,
+        Monthly
+    }
+
+    public class Appointment
+    {
+        public int Id { get; set; }
+
+        public string Title { get; set; } = string.Empty;
+
+        public DateTime StartTime { get; set; }
+
+        public DateTime EndTime { get; set; }
+
+        // User relationship
+        public int UserId { get; set; }
+        public User User { get; set; } = null!;
+
+        public string? Description { get; set; }
+        public string? Location { get; set; }
+        public string? Attendees { get; set; }
+        public string? Type { get; set; }
+        public string? ColorCode { get; set; }
+
+        // Recurrence
+        public RecurrenceType Recurrence { get; set; } = RecurrenceType.None;
+        public int? RecurrenceInterval { get; set; }
+        public DateTime? RecurrenceEndDate { get; set; }
+
+       
     }
 }

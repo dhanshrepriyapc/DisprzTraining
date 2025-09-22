@@ -1,13 +1,9 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace DisprzTraining.DTOs
 {
-    public class LoginDto
+    public class RegisterDto
     {
-        [Required]
         public string Username { get; set; } = null!;
-
-        [Required]
         public string Password { get; set; } = null!;
+        public string? TimeZoneId { get; set; } = "India Standard Time"; // default IST
     }
 }

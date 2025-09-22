@@ -1,4 +1,5 @@
 using DisprzTraining.Models;
+
 namespace DisprzTraining.DataAccess
 {
     public interface IAppointmentRepository
@@ -9,7 +10,9 @@ namespace DisprzTraining.DataAccess
         Task AddAsync(Appointment appointment);
         Task UpdateAsync(Appointment appointment);
         Task DeleteAsync(Appointment appointment);
+        Task<List<Appointment>> SearchAsync(string keyword, int? userId);
 
+        // Needed for AppointmentService to fetch user info for timezone etc.
+        Task<User?> GetUserByIdAsync(int userId);
     }
-
 }

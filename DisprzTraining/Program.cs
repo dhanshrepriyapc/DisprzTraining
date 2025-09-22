@@ -1,7 +1,9 @@
 ﻿using DisprzTraining.Models;
-using DisprzTraining.DataAccess;
-using DisprzTraining.Business;
 using Microsoft.EntityFrameworkCore;
+using DisprzTraining.Utils;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,13 +11,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Register Repository & Service
-builder.Services.AddScoped<AppointmentRepository>();
-builder.Services.AddScoped<AppointmentService>();
-
-builder.Services.AddScoped<UserRepository>();
-builder.Services.AddScoped<UserService>();
-
+// Add dependency injection 
+builder.Services.ConfigureDependencyInjections();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.WriteIndented = true; // optional, for readability
+    });
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -27,6 +30,24 @@ builder.Services.AddCors(options =>
                         .AllowAnyMethod()
                         .AllowAnyHeader());
 });
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        };
+    });
+
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -34,10 +55,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-// Use CORS before MapControllers
-app.UseHttpsRedirection(); 
+
+// Middleware order matters
+//app.UseHttpsRedirection(); 
 app.UseCors("AllowReactApp");
+app.UseAuthentication();    // Must come before UseAuthorization
 app.UseAuthorization();
-app.MapControllers();
+
+app.MapControllers();       // Map endpoints after middleware
 
 app.Run();

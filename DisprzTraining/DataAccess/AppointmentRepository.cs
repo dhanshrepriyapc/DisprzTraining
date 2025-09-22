@@ -1,5 +1,6 @@
 using DisprzTraining.Models;
 using Microsoft.EntityFrameworkCore;
+
 namespace DisprzTraining.DataAccess
 {
     public class AppointmentRepository : IAppointmentRepository
@@ -14,13 +15,17 @@ namespace DisprzTraining.DataAccess
         // GET all appointments (optional)
         public async Task<List<Appointment>> GetAllAsync()
         {
-            return await _context.Appointments.ToListAsync();
+            return await _context.Appointments
+                                 .Include(a => a.User)
+                                 .ToListAsync();
         }
 
         // GET appointment by ID
         public async Task<Appointment?> GetByIdAsync(int id)
         {
-            return await _context.Appointments.FindAsync(id);
+            return await _context.Appointments
+                                 .Include(a => a.User)
+                                 .FirstOrDefaultAsync(a => a.Id == id);
         }
 
         // GET all appointments for a specific user
@@ -52,6 +57,34 @@ namespace DisprzTraining.DataAccess
             _context.Appointments.Remove(appointment);
             await _context.SaveChangesAsync();
         }
+
+        // SEARCH appointments by keyword (title, description, location, attendees, username)
+        public async Task<List<Appointment>> SearchAsync(string keyword, int? userId)
+        {
+            var query = _context.Appointments
+                                .Include(a => a.User)
+                                .AsQueryable();
+
+            if (userId.HasValue)
+                query = query.Where(a => a.UserId == userId.Value);
+
+            keyword = keyword.ToLower();
+
+            return await query
+                .Where(a =>
+                    a.Title.ToLower().Contains(keyword) ||
+                    (a.Description != null && a.Description.ToLower().Contains(keyword)) ||
+                    (a.Location != null && a.Location.ToLower().Contains(keyword)) ||
+                    (a.Attendees != null && a.Attendees.ToLower().Contains(keyword)) ||
+                    (a.User != null && a.User.Username.ToLower().Contains(keyword))
+                )
+                .ToListAsync();
+        }
+
+        // GET user details by ID
+        public async Task<User?> GetUserByIdAsync(int userId)
+        {
+            return await _context.Users.FindAsync(userId);
+        }
     }
 }
-

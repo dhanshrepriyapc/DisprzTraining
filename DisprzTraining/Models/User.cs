@@ -12,7 +12,11 @@ namespace DisprzTraining.Models
         [Required]
         public string PasswordHash { get; set; } = null!; // store hashed password
 
-        // Optional: list of appointments for this user
+        // Each user has a fixed timezone
+        [Required]
+        public string TimeZoneId { get; set; } = TimeZoneInfo.Local.Id; // default server timezone
+
+        // Navigation property
         public List<Appointment> Appointments { get; set; } = new();
     }
 }
