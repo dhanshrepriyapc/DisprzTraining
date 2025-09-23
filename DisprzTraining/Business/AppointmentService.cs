@@ -8,10 +8,12 @@ namespace DisprzTraining.Business
     public class AppointmentService : IAppointmentService
     {
         private readonly IAppointmentRepository _repository;
+         private readonly IUserRepository _userRepository;
 
-        public AppointmentService(IAppointmentRepository repository)
+        public AppointmentService(IAppointmentRepository repository, IUserRepository userRepository)
         {
             _repository = repository;
+            _userRepository = userRepository; 
         }
 
         // GET all appointments for a specific user
@@ -38,127 +40,200 @@ namespace DisprzTraining.Business
         }
 
         // CREATE new appointment for a specific user (materialized recurring appointments)
-public async Task<(bool Success, string? Error, Appointment? Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
-{
-    try
-    {
-        Console.WriteLine($"=== CREATE APPOINTMENT DEBUG ===");
-        Console.WriteLine($"DTO Recurrence: {dto.Recurrence}");
-        Console.WriteLine($"DTO RecurrenceInterval: {dto.RecurrenceInterval}");
-        Console.WriteLine($"DTO RecurrenceEndDate: {dto.RecurrenceEndDate}");
-        Console.WriteLine($"Start Time: {dto.StartTime}");
-        Console.WriteLine($"End Time: {dto.EndTime}");
-
-        var start = dto.StartTime;
-        var end = dto.EndTime;
-        if (start >= end)
-            return (false, "StartTime must be before EndTime", null);
-
-        var existingAppointments = await _repository.GetByUserIdAsync(userId);
-        bool Overlaps(DateTime s1, DateTime e1, DateTime s2, DateTime e2) => s1 < e2 && e1 > s2;
-
-        var createdAppointments = new List<Appointment>();
-
-        if (dto.Recurrence != AppointmentDto.RecurrenceType.None)
+        public async Task<(bool Success, string? Error, Appointment? Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
         {
-            var occurrence = start;
-            var recurrenceEnd = dto.RecurrenceEndDate ?? start.AddMonths(3);
-            var interval = dto.RecurrenceInterval ?? 1;
-
-            Console.WriteLine($"Creating recurring appointments from {occurrence} until {recurrenceEnd} with interval {interval}");
-
-            int maxOccurrences = 100; // Safety limit
-            int createdCount = 0;
-
-            while (occurrence.Date <= recurrenceEnd.Date && createdCount < maxOccurrences)
+            try
             {
-                var occurrenceEnd = occurrence + (end - start);
-                
-                Console.WriteLine($"Creating occurrence #{createdCount + 1}: {occurrence} to {occurrenceEnd}");
+                Console.WriteLine($"=== CREATE APPOINTMENT DEBUG ===");
+                Console.WriteLine($"DTO Recurrence: {dto.Recurrence}");
+                Console.WriteLine($"DTO RecurrenceInterval: {dto.RecurrenceInterval}");
+                Console.WriteLine($"DTO RecurrenceEndDate: {dto.RecurrenceEndDate}");
+                Console.WriteLine($"Start Time: {dto.StartTime}");
+                Console.WriteLine($"End Time: {dto.EndTime}");
 
-                // Check overlap
-                foreach (var existing in existingAppointments)
+                // Get user to access their timezone
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null)
+                    return (false, "User not found", null);
+
+                // Validate against past bookings in user's timezone
+                var validationResult = ValidateAppointmentTime(dto.StartTime, dto.EndTime, user.TimeZoneId);
+                if (!validationResult.IsValid)
+                    return (false, validationResult.ErrorMessage, null);
+
+                var start = dto.StartTime;
+                var end = dto.EndTime;
+
+                if (start >= end)
+                    return (false, "StartTime must be before EndTime", null);
+
+                var existingAppointments = await _repository.GetByUserIdAsync(userId);
+                bool Overlaps(DateTime s1, DateTime e1, DateTime s2, DateTime e2) => s1 < e2 && e1 > s2;
+
+                var createdAppointments = new List<Appointment>();
+
+                if (dto.Recurrence != AppointmentDto.RecurrenceType.None)
                 {
-                    if (Overlaps(occurrence, occurrenceEnd, existing.StartTime, existing.EndTime))
-                        return (false, $"Recurring appointment on {occurrence:yyyy-MM-dd} overlaps with existing appointment", null);
+                    var occurrence = start;
+                    var recurrenceEnd = dto.RecurrenceEndDate ?? start.AddMonths(3);
+                    var interval = dto.RecurrenceInterval ?? 1;
+
+                    Console.WriteLine($"Creating recurring appointments from {occurrence} until {recurrenceEnd} with interval {interval}");
+
+                    int maxOccurrences = 100; // Safety limit
+                    int createdCount = 0;
+
+                    while (occurrence.Date <= recurrenceEnd.Date && createdCount < maxOccurrences)
+                    {
+                        var occurrenceEnd = occurrence + (end - start);
+
+                        Console.WriteLine($"Creating occurrence #{createdCount + 1}: {occurrence} to {occurrenceEnd}");
+
+                        // Validate each recurring appointment against past time
+                        var recurringValidation = ValidateAppointmentTime(occurrence, occurrenceEnd, user.TimeZoneId);
+                        if (!recurringValidation.IsValid)
+                        {
+                            // Skip past occurrences for recurring appointments, but continue with future ones
+                            Console.WriteLine($"Skipping past occurrence: {occurrence}");
+                            
+                            // Move to next occurrence
+                            var nextOccurrence = dto.Recurrence switch
+                            {
+                                AppointmentDto.RecurrenceType.Daily => occurrence.AddDays(interval),
+                                AppointmentDto.RecurrenceType.Weekly => occurrence.AddDays(7 * interval),
+                                AppointmentDto.RecurrenceType.Monthly => AddMonthsSafely(occurrence, interval),
+                                _ => recurrenceEnd.AddDays(1)
+                            };
+                            
+                            if (nextOccurrence <= occurrence)
+                                break;
+                            
+                            occurrence = nextOccurrence;
+                            continue;
+                        }
+
+                        // Check overlap with existing appointments
+                        foreach (var existing in existingAppointments)
+                        {
+                            if (Overlaps(occurrence, occurrenceEnd, existing.StartTime, existing.EndTime))
+                                return (false, $"Recurring appointment on {occurrence:yyyy-MM-dd} overlaps with existing appointment", null);
+                        }
+
+                        // Create appointment
+                        var appointment = new Appointment
+                        {
+                            Title = dto.Title,
+                            StartTime = occurrence,
+                            EndTime = occurrenceEnd,
+                            UserId = userId,
+                            Description = dto.Description,
+                            Location = dto.Location,
+                            Attendees = dto.Attendees,
+                            Type = dto.Type,
+                            ColorCode = dto.ColorCode,
+                            Recurrence = RecurrenceType.None,
+                            RecurrenceInterval = null,
+                            RecurrenceEndDate = null
+                        };
+
+                        await _repository.AddAsync(appointment);
+                        createdAppointments.Add(appointment);
+                        createdCount++;
+
+                        // Move to next occurrence
+                        var nextOccurrence2 = dto.Recurrence switch
+                        {
+                            AppointmentDto.RecurrenceType.Daily => occurrence.AddDays(interval),
+                            AppointmentDto.RecurrenceType.Weekly => occurrence.AddDays(7 * interval),
+                            AppointmentDto.RecurrenceType.Monthly => AddMonthsSafely(occurrence, interval),
+                            _ => recurrenceEnd.AddDays(1)
+                        };
+
+                        if (nextOccurrence2 <= occurrence)
+                        {
+                            Console.WriteLine("Breaking: Next occurrence is not after current");
+                            break;
+                        }
+                        occurrence = nextOccurrence2;
+                    }
+
+                    Console.WriteLine($"Created {createdAppointments.Count} recurring appointments");
+                    if (createdAppointments.Count == 0)
+                        return (false, "No future appointments could be created. All occurrences are in the past.", null);
+
+                    return (true, null, createdAppointments.First());
                 }
-
-                // Create appointment
-                var appointment = new Appointment
+                else
                 {
-                    Title = dto.Title,
-                    StartTime = occurrence,
-                    EndTime = occurrenceEnd,
-                    UserId = userId,
-                    Description = dto.Description,
-                    Location = dto.Location,
-                    Attendees = dto.Attendees,
-                    Type = dto.Type,
-                    ColorCode = dto.ColorCode,
-                    Recurrence = RecurrenceType.None,
-                    RecurrenceInterval = null,
-                    RecurrenceEndDate = null
-                };
+                    // Single appointment
+                    if (existingAppointments.Any(a => Overlaps(start, end, a.StartTime, a.EndTime)))
+                        return (false, "Appointment time overlaps with existing appointment", null);
 
-                await _repository.AddAsync(appointment);
-                createdAppointments.Add(appointment);
-                createdCount++;
+                    var appointment = new Appointment
+                    {
+                        Title = dto.Title,
+                        StartTime = start,
+                        EndTime = end,
+                        UserId = userId,
+                        Description = dto.Description,
+                        Location = dto.Location,
+                        Attendees = dto.Attendees,
+                        Type = dto.Type,
+                        ColorCode = dto.ColorCode,
+                        Recurrence = RecurrenceType.None
+                    };
 
-                // Move to next occurrence
-                var nextOccurrence = dto.Recurrence switch
-                {
-                    AppointmentDto.RecurrenceType.Daily => occurrence.AddDays(interval),
-                    AppointmentDto.RecurrenceType.Weekly => occurrence.AddDays(7 * interval),
-                    AppointmentDto.RecurrenceType.Monthly => AddMonthsSafely(occurrence, interval),
-                    _ => recurrenceEnd.AddDays(1)
-                };
-
-                if (nextOccurrence <= occurrence)
-                {
-                    Console.WriteLine("Breaking: Next occurrence is not after current");
-                    break;
+                    await _repository.AddAsync(appointment);
+                    return (true, null, appointment);
                 }
-
-                occurrence = nextOccurrence;
             }
-
-            Console.WriteLine($"Created {createdAppointments.Count} recurring appointments");
-
-            if (createdAppointments.Count == 0)
-                return (false, "No appointments created - check your recurrence settings", null);
-
-            return (true, null, createdAppointments.First());
-        }
-        else
-        {
-            // Single appointment
-            if (existingAppointments.Any(a => Overlaps(start, end, a.StartTime, a.EndTime)))
-                return (false, "Appointment time overlaps with existing appointment", null);
-
-            var appointment = new Appointment
+            catch (Exception ex)
             {
-                Title = dto.Title,
-                StartTime = start,
-                EndTime = end,
-                UserId = userId,
-                Description = dto.Description,
-                Location = dto.Location,
-                Attendees = dto.Attendees,
-                Type = dto.Type,
-                ColorCode = dto.ColorCode,
-                Recurrence = RecurrenceType.None
-            };
-
-            await _repository.AddAsync(appointment);
-            return (true, null, appointment);
+                Console.WriteLine($"Error creating appointment: {ex.Message}");
+                return (false, ex.Message, null);
+            }
         }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error creating appointment: {ex.Message}");
-        return (false, ex.Message, null);
-    }
-}
+        private (bool IsValid, string? ErrorMessage) ValidateAppointmentTime(DateTime startTime, DateTime endTime, string userTimeZoneId)
+        {
+            try
+            {
+                // Get user's timezone
+                var userTimeZone = TimeZoneInfo.FindSystemTimeZoneById(userTimeZoneId);
+                
+                // Convert UTC times to user's local time for validation
+                var userLocalStartTime = TimeZoneInfo.ConvertTimeFromUtc(startTime, userTimeZone);
+                var userLocalEndTime = TimeZoneInfo.ConvertTimeFromUtc(endTime, userTimeZone);
+                var userCurrentTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, userTimeZone);
+
+                Console.WriteLine($"Validation - User TZ: {userTimeZoneId}");
+                Console.WriteLine($"Validation - Current time in user TZ: {userCurrentTime}");
+                Console.WriteLine($"Validation - Appointment start in user TZ: {userLocalStartTime}");
+                Console.WriteLine($"Validation - Appointment end in user TZ: {userLocalEndTime}");
+
+                // Check if appointment start time is in the past (in user's timezone)
+                if (userLocalStartTime <= userCurrentTime)
+                {
+                    return (false, $"Cannot book appointments in the past. Current time in your timezone ({userTimeZoneId}): {userCurrentTime:yyyy-MM-dd HH:mm}");
+                }
+
+                // Check if appointment end time is in the past (in user's timezone)
+                if (userLocalEndTime <= userCurrentTime)
+                {
+                    return (false, $"Appointment end time cannot be in the past. Current time in your timezone ({userTimeZoneId}): {userCurrentTime:yyyy-MM-dd HH:mm}");
+                }
+
+                return (true, null);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return (false, "Invalid timezone configuration for user");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error validating appointment time: {ex.Message}");
+                return (false, "Error validating appointment time");
+            }
+        }
 
         // UPDATE appointment
         public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto, int userId)
