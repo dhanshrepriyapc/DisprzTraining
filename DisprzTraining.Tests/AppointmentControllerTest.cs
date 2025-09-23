@@ -1,245 +1,510 @@
 using DisprzTraining.Controllers;
 using DisprzTraining.DTOs;
+using DisprzTraining.Models;
 using DisprzTraining.Business;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
-using DisprzTraining.Models;
+using System;
+using System.Collections.Generic;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using Xunit;
 
 namespace DisprzTraining.Tests
 {
     public class AppointmentsControllerTest
     {
-        // -------------------- GET APPOINTMENTS --------------------
-        [Fact]
-        public async Task GetAppointments_ReturnsBadRequest_WhenUserIdInvalid()
+        // Helper: create controller with mocked user claims
+        private AppointmentsController CreateControllerWithUser(Mock<IAppointmentService> mockService, int userId = 1, string timeZoneId = "Asia/Calcutta")
         {
-            var mockService = new Mock<IAppointmentService>();
             var controller = new AppointmentsController(mockService.Object);
 
-            var result = await controller.GetAppointments(0);
-
-            var badResult = Assert.IsType<BadRequestObjectResult>(result);
-            Assert.Equal(400, badResult.StatusCode);
-        }
-
-        [Fact]
-        public async Task GetAppointments_ReturnsOk_WithAppointments()
-        {
-            var mockService = new Mock<IAppointmentService>();
-            var fakeAppointments = new List<AppointmentDto> 
-            { 
-                new AppointmentDto { Id = 1, Title = "Meeting" } 
+            // Mock HttpContext and User claims
+            var claims = new List<Claim>
+            {
+                new Claim("id", userId.ToString()),
+                new Claim("timeZoneId", timeZoneId)
             };
-            mockService.Setup(a => a.GetAppointmentsForUserAsync(1))
-                       .ReturnsAsync(fakeAppointments);
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.GetAppointments(1);
+            var identity = new ClaimsIdentity(claims, "TestAuth");
+            var principal = new ClaimsPrincipal(identity);
 
-            var okResult = Assert.IsType<OkObjectResult>(result);
-            var data = Assert.IsAssignableFrom<IEnumerable<AppointmentDto>>(okResult.Value);
-            Assert.Single(data);
+            var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+            {
+                User = principal
+            };
+
+            controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+            {
+                HttpContext = httpContext
+            };
+
+            return controller;
         }
 
-        [Fact]
-        public async Task GetAppointments_ReturnsOk_WithEmptyList()
-        {
-            var mockService = new Mock<IAppointmentService>();
-            mockService.Setup(s => s.GetAppointmentsForUserAsync(1))
-                       .ReturnsAsync(new List<AppointmentDto>());
-
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.GetAppointments(1);
-
-            var okResult = Assert.IsType<OkObjectResult>(result);
-            var data = Assert.IsAssignableFrom<IEnumerable<AppointmentDto>>(okResult.Value);
-            Assert.Empty(data);
-        }
+        #region CreateUserAppointment Tests
 
         [Fact]
-        public async Task GetById_ReturnsNotFound_WhenAppointmentDoesNotExist()
+        public async Task CreateUserAppointment_ValidDto_ReturnsCreatedResult()
         {
+            // Arrange
             var mockService = new Mock<IAppointmentService>();
-            mockService.Setup(s => s.GetAppointmentByIdAsync(1))
-                       .ReturnsAsync((Appointment?)null);
+            var controller = CreateControllerWithUser(mockService, 1);
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.GetById(1);
+            var dto = new AppointmentDto
+            {
+                Title = "Test Meeting",
+                StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 10, 0, 0), DateTimeKind.Unspecified),
+                EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 11, 0, 0), DateTimeKind.Unspecified),
+                Type = "Meeting",
+                ColorCode = "#FF0000"
+            };
 
-            Assert.IsType<NotFoundResult>(result.Result);
-        }
+            var createdAppointment = new Appointment
+            {
+                Id = 1,
+                Title = dto.Title,
+                StartTime = dto.StartTime,
+                EndTime = dto.EndTime,
+                Type = dto.Type,
+                ColorCode = dto.ColorCode,
+                UserId = 1
+            };
 
-        [Fact]
-        public async Task GetById_ReturnsOk_WithAppointment()
-        {
-            var mockService = new Mock<IAppointmentService>();
-            mockService.Setup(s => s.GetAppointmentByIdAsync(1))
-                       .ReturnsAsync(new Appointment
-                       {
-                           Id = 1,
-                           Title = "Call",
-                           StartTime = DateTime.Now,
-                           EndTime = DateTime.Now.AddHours(1),
-                           UserId = 1
-                       });
+            mockService.Setup(s => s.CreateAppointmentAsync(It.IsAny<AppointmentDto>(), 1))
+                       .ReturnsAsync((true, null, createdAppointment));
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.GetById(1);
+            // Act
+            var result = await controller.CreateUserAppointment(dto);
 
-            var okResult = Assert.IsType<OkObjectResult>(result.Result);
-            var dto = Assert.IsType<AppointmentDto>(okResult.Value);
-            Assert.Equal(1, dto.Id);
-            Assert.Equal("Call", dto.Title);
-        }
-
-        // -------------------- CREATE APPOINTMENT --------------------
-        [Fact]
-        public async Task CreateAppointment_ReturnsBadRequest_WhenUserIdInvalid()
-        {
-            var mockService = new Mock<IAppointmentService>();
-            var controller = new AppointmentsController(mockService.Object);
-
-            var result = await controller.CreateAppointment(new AppointmentDto(), 0);
-
-            var badResult = Assert.IsType<BadRequestObjectResult>(result);
-            Assert.Equal(400, badResult.StatusCode);
-        }
-
-        [Fact]
-        public async Task CreateAppointment_ReturnsCreated_WhenSuccess()
-        {
-            var mockService = new Mock<IAppointmentService>();
-            var dto = new AppointmentDto { Title = "Meeting" };
-            mockService.Setup(s => s.CreateAppointmentAsync(dto, 1))
-                       .ReturnsAsync((true, null, new Appointment { Id = 1, Title = "Meeting" }));
-
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.CreateAppointment(dto, 1);
-
+            // Assert
             var createdResult = Assert.IsType<CreatedAtActionResult>(result);
-            var appointment = Assert.IsType<Appointment>(createdResult.Value);
-            Assert.Equal(1, appointment.Id);
+            Assert.NotNull(createdResult.Value);
+
+            // Use reflection to access anonymous object properties
+            var responseType = createdResult.Value!.GetType();
+            var idProperty = responseType.GetProperty("Id");
+            var titleProperty = responseType.GetProperty("Title");
+
+            Assert.NotNull(idProperty);
+            Assert.NotNull(titleProperty);
+
+            var idValue = idProperty.GetValue(createdResult.Value);
+            var titleValue = titleProperty.GetValue(createdResult.Value);
+
+            Assert.Equal(1, idValue);
+            Assert.Equal("Test Meeting", titleValue);
         }
 
         [Fact]
-        public async Task CreateAppointment_ReturnsConflict_WhenOverlap()
+        public async Task CreateUserAppointment_ServiceError_ReturnsConflict()
         {
+            // Arrange
             var mockService = new Mock<IAppointmentService>();
-            var dto = new AppointmentDto { Title = "Overlap" };
-            mockService.Setup(s => s.CreateAppointmentAsync(dto, 1))
-                       .ReturnsAsync((false, "Appointment time overlaps with existing appointment", null!));
+            var controller = CreateControllerWithUser(mockService, 1);
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.CreateAppointment(dto, 1);
+            var dto = new AppointmentDto
+            {
+                Title = "Test Meeting",
+                StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 10, 0, 0), DateTimeKind.Unspecified),
+                EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 11, 0, 0), DateTimeKind.Unspecified),
+                Type = "Meeting",
+                ColorCode = "#FF0000"
+            };
 
-            var conflict = Assert.IsType<ConflictObjectResult>(result);
-            Assert.Equal(409, conflict.StatusCode);
+            mockService.Setup(s => s.CreateAppointmentAsync(It.IsAny<AppointmentDto>(), 1))
+                       .ReturnsAsync((false, "Appointment conflicts with existing appointment", null));
+
+            // Act
+            var result = await controller.CreateUserAppointment(dto);
+
+            // Assert
+            var conflictResult = Assert.IsType<ConflictObjectResult>(result);
+            Assert.NotNull(conflictResult.Value);
+
+            // Use reflection to access anonymous object properties
+            var responseType = conflictResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            Assert.NotNull(messageProperty);
+
+            var messageValue = messageProperty.GetValue(conflictResult.Value);
+            Assert.Equal("Appointment conflicts with existing appointment", messageValue);
         }
 
-        // -------------------- UPDATE APPOINTMENT --------------------
         [Fact]
-        public async Task UpdateAppointment_ReturnsBadRequest_WhenUserIdInvalid()
+        public async Task CreateUserAppointment_InvalidTimeRange_ReturnsBadRequest()
         {
+            // Arrange
             var mockService = new Mock<IAppointmentService>();
-            var controller = new AppointmentsController(mockService.Object);
+            var controller = CreateControllerWithUser(mockService, 1);
 
-            var result = await controller.UpdateAppointment(1, new AppointmentDto(), 0);
-            var badResult = Assert.IsType<BadRequestObjectResult>(result);
-            Assert.Equal(400, badResult.StatusCode);
+            var dto = new AppointmentDto
+            {
+                Title = "Test Meeting",
+                StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 11, 0, 0), DateTimeKind.Unspecified), // Start after end
+                EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 10, 0, 0), DateTimeKind.Unspecified),
+                Type = "Meeting",
+                ColorCode = "#FF0000"
+            };
+
+            // Act
+            var result = await controller.CreateUserAppointment(dto);
+
+            // Assert
+            var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+            Assert.NotNull(badRequestResult.Value);
+
+            // Use reflection to access anonymous object properties
+            var responseType = badRequestResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            Assert.NotNull(messageProperty);
+
+            var messageValue = messageProperty.GetValue(badRequestResult.Value);
+            Assert.Equal("StartTime must be before EndTime", messageValue);
         }
 
+        #endregion
+
+        #region UpdateUserAppointment Tests
+
         [Fact]
-        public async Task UpdateAppointment_ReturnsNotFound_WhenNotExist()
+        public async Task UpdateUserAppointment_ValidUpdate_ReturnsOk()
         {
+            // Arrange
             var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            var dto = new AppointmentDto
+            {
+                Title = "Updated Meeting",
+                StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 14, 0, 0), DateTimeKind.Unspecified),
+                EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 15, 0, 0), DateTimeKind.Unspecified),
+                Type = "Meeting",
+                ColorCode = "#00FF00"
+            };
+
             mockService.Setup(s => s.UpdateAppointmentAsync(1, It.IsAny<AppointmentDto>(), 1))
-                       .ReturnsAsync((false, "Not found"));
+                       .ReturnsAsync((true, null));
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.UpdateAppointment(1, new AppointmentDto(), 1);
+            // Act
+            var result = await controller.UpdateUserAppointment(1, dto);
 
-            Assert.IsType<NotFoundResult>(result);
+            // Assert
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(okResult.Value);
+
+            // Use reflection to access anonymous object properties
+            var responseType = okResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            Assert.NotNull(messageProperty);
+
+            var messageValue = messageProperty.GetValue(okResult.Value);
+            Assert.Equal("Appointment updated successfully", messageValue);
         }
 
         [Fact]
-        public async Task UpdateAppointment_ReturnsUnauthorized_WhenUserMismatch()
+        public async Task UpdateUserAppointment_Unauthorized_ReturnsUnauthorized()
         {
+            // Arrange
             var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            var dto = new AppointmentDto
+            {
+                Title = "Updated Meeting",
+                StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 14, 0, 0), DateTimeKind.Unspecified),
+                EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 15, 0, 0), DateTimeKind.Unspecified),
+                Type = "Meeting",
+                ColorCode = "#00FF00"
+            };
+
             mockService.Setup(s => s.UpdateAppointmentAsync(1, It.IsAny<AppointmentDto>(), 1))
                        .ReturnsAsync((false, "Unauthorized"));
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.UpdateAppointment(1, new AppointmentDto(), 1);
+            // Act
+            var result = await controller.UpdateUserAppointment(1, dto);
 
-            var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
-            Assert.Equal(401, unauthorized.StatusCode);
+            // Assert
+            var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result);
+            Assert.NotNull(unauthorizedResult.Value);
+
+            // Use reflection to access anonymous object properties
+            var responseType = unauthorizedResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            Assert.NotNull(messageProperty);
+
+            var messageValue = messageProperty.GetValue(unauthorizedResult.Value);
+            Assert.Equal("Cannot edit another user's appointment", messageValue);
         }
 
         [Fact]
-        public async Task UpdateAppointment_ReturnsConflict_WhenOverlap()
+        public async Task UpdateUserAppointment_NotFound_ReturnsNotFound()
         {
+            // Arrange
             var mockService = new Mock<IAppointmentService>();
-            var dto = new AppointmentDto { Title = "UpdateOverlap" };
-            mockService.Setup(s => s.UpdateAppointmentAsync(1, dto, 1))
-                       .ReturnsAsync((false, "Appointment time overlaps with existing appointment"));
+            var controller = CreateControllerWithUser(mockService, 1);
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.UpdateAppointment(1, dto, 1);
+            var dto = new AppointmentDto
+            {
+                Title = "Updated Meeting",
+                StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 14, 0, 0), DateTimeKind.Unspecified),
+                EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 15, 0, 0), DateTimeKind.Unspecified),
+                Type = "Meeting",
+                ColorCode = "#00FF00"
+            };
 
-            var conflict = Assert.IsType<ConflictObjectResult>(result);
-            Assert.Equal(409, conflict.StatusCode);
-        }
-
-        // -------------------- DELETE APPOINTMENT --------------------
-        [Fact]
-        public async Task DeleteAppointment_ReturnsBadRequest_WhenUserIdInvalid()
-        {
-            var mockService = new Mock<IAppointmentService>();
-            var controller = new AppointmentsController(mockService.Object);
-
-            var result = await controller.DeleteAppointment(1, 0);
-            var badResult = Assert.IsType<BadRequestObjectResult>(result);
-            Assert.Equal(400, badResult.StatusCode);
-        }
-
-        [Fact]
-        public async Task DeleteAppointment_ReturnsNotFound_WhenNotExist()
-        {
-            var mockService = new Mock<IAppointmentService>();
-            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+            mockService.Setup(s => s.UpdateAppointmentAsync(1, It.IsAny<AppointmentDto>(), 1))
                        .ReturnsAsync((false, "Not found"));
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.DeleteAppointment(1, 1);
+            // Act
+            var result = await controller.UpdateUserAppointment(1, dto);
 
-            Assert.IsType<NotFoundResult>(result);
+            // Assert
+            var notFoundResult = Assert.IsType<NotFoundObjectResult>(result);
+            Assert.NotNull(notFoundResult.Value);
+
+            // Use reflection to access anonymous object properties
+            var responseType = notFoundResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            Assert.NotNull(messageProperty);
+
+            var messageValue = messageProperty.GetValue(notFoundResult.Value);
+            Assert.Equal("Appointment not found", messageValue);
         }
 
-        [Fact]
-        public async Task DeleteAppointment_ReturnsUnauthorized_WhenUserMismatch()
-        {
-            var mockService = new Mock<IAppointmentService>();
-            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
-                       .ReturnsAsync((false, "Unauthorized"));
+        #endregion
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.DeleteAppointment(1, 1);
-
-            var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
-            Assert.Equal(401, unauthorized.StatusCode);
-        }
+        #region DeleteUserAppointment Tests
 
         [Fact]
-        public async Task DeleteAppointment_ReturnsNoContent_WhenSuccess()
+        public async Task DeleteUserAppointment_ValidId_ReturnsNoContent()
         {
+            // Arrange
             var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
             mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
                        .ReturnsAsync((true, null));
 
-            var controller = new AppointmentsController(mockService.Object);
-            var result = await controller.DeleteAppointment(1, 1);
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
 
+            // Assert
             Assert.IsType<NoContentResult>(result);
         }
+
+        [Fact]
+        public async Task DeleteUserAppointment_NotFound_ReturnsNotFound()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                       .ReturnsAsync((false, "Not found"));
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            var notFoundResult = Assert.IsType<NotFoundObjectResult>(result);
+            Assert.NotNull(notFoundResult.Value);
+
+            // Use reflection to access anonymous object properties
+            var responseType = notFoundResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            Assert.NotNull(messageProperty);
+
+            var messageValue = messageProperty.GetValue(notFoundResult.Value);
+            Assert.Equal("Appointment not found", messageValue);
+        }
+
+        #endregion
+
+        #region GetUserRecurringAppointments Tests
+
+        [Fact]
+        public async Task GetUserRecurringAppointments_ValidDateRange_ReturnsAppointments()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            var startDate = DateTime.SpecifyKind(new DateTime(2024, 1, 1), DateTimeKind.Unspecified);
+            var endDate = DateTime.SpecifyKind(new DateTime(2024, 1, 31), DateTimeKind.Unspecified);
+
+            var appointments = new List<AppointmentDto>
+            {
+                new AppointmentDto
+                {
+                    Id = 1,
+                    Title = "Recurring Meeting",
+                    StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 10, 0, 0), DateTimeKind.Unspecified),
+                    EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 11, 0, 0), DateTimeKind.Unspecified),
+                    Type = "Meeting",
+                    ColorCode = "#FF0000"
+                }
+            };
+
+            mockService.Setup(s => s.GetRecurringAppointmentsAsync(1, It.IsAny<DateTime>(), It.IsAny<DateTime>()))
+                       .ReturnsAsync(appointments);
+
+            // Act
+            var result = await controller.GetUserRecurringAppointments(startDate, endDate);
+
+            // Assert
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            var returnedAppointments = Assert.IsType<List<AppointmentDto>>(okResult.Value);
+            Assert.Single(returnedAppointments);
+            Assert.Equal("Recurring Meeting", returnedAppointments[0].Title);
+        }
+
+        [Fact]
+        public async Task GetUserRecurringAppointments_InvalidDateRange_ReturnsBadRequest()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            var startDate = DateTime.SpecifyKind(new DateTime(2024, 1, 31), DateTimeKind.Unspecified);
+            var endDate = DateTime.SpecifyKind(new DateTime(2024, 1, 1), DateTimeKind.Unspecified); // End before start
+
+            // Act
+            var result = await controller.GetUserRecurringAppointments(startDate, endDate);
+
+            // Assert
+            var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+            Assert.NotNull(badRequestResult.Value);
+
+            // Use reflection to access anonymous object properties
+            var responseType = badRequestResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            Assert.NotNull(messageProperty);
+
+            var messageValue = messageProperty.GetValue(badRequestResult.Value);
+            Assert.Equal("Start date must be before end date", messageValue);
+        }
+
+        #endregion
+
+        #region GetUserAppointments Tests
+
+        [Fact]
+        public async Task GetUserAppointments_ReturnsUserAppointments()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            var appointments = new List<AppointmentDto>
+            {
+                new AppointmentDto
+                {
+                    Id = 1,
+                    Title = "Meeting 1",
+                    StartTime = DateTime.UtcNow.AddHours(1),
+                    EndTime = DateTime.UtcNow.AddHours(2),
+                    Type = "Meeting",
+                    ColorCode = "#FF0000"
+                },
+                new AppointmentDto
+                {
+                    Id = 2,
+                    Title = "Meeting 2",
+                    StartTime = DateTime.UtcNow.AddHours(3),
+                    EndTime = DateTime.UtcNow.AddHours(4),
+                    Type = "Call",
+                    ColorCode = "#00FF00"
+                }
+            };
+
+            mockService.Setup(s => s.GetAppointmentsForUserAsync(1))
+                       .ReturnsAsync(appointments);
+
+            // Act
+            var result = await controller.GetUserAppointments();
+
+            // Assert
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            var returnedAppointments = Assert.IsType<List<AppointmentDto>>(okResult.Value);
+            Assert.Equal(2, returnedAppointments.Count);
+            Assert.Equal("Meeting 1", returnedAppointments[0].Title);
+            Assert.Equal("Meeting 2", returnedAppointments[1].Title);
+        }
+
+        #endregion
+
+        #region SearchUserAppointments Tests
+
+        [Fact]
+        public async Task SearchUserAppointments_ValidKeyword_ReturnsMatchingAppointments()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            var searchResults = new List<AppointmentDto>
+            {
+                new AppointmentDto
+                {
+                    Id = 1,
+                    Title = "Team Meeting",
+                    StartTime = DateTime.UtcNow.AddHours(1),
+                    EndTime = DateTime.UtcNow.AddHours(2),
+                    Type = "Meeting",
+                    ColorCode = "#FF0000"
+                }
+            };
+
+            mockService.Setup(s => s.SearchAppointmentsAsync("meeting", 1))
+                       .ReturnsAsync(searchResults);
+
+            // Act
+            var result = await controller.SearchUserAppointments("meeting");
+
+            // Assert
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            var returnedAppointments = Assert.IsType<List<AppointmentDto>>(okResult.Value);
+            Assert.Single(returnedAppointments);
+            Assert.Equal("Team Meeting", returnedAppointments[0].Title);
+        }
+
+        #endregion
+
+        #region UpdateTypeAndColor Tests
+
+        [Fact]
+        public async Task UpdateTypeAndColor_ValidUpdate_ReturnsOk()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            var dto = new AppointmentDto
+            {
+                Type = "Call",
+                ColorCode = "#0000FF"
+            };
+
+            mockService.Setup(s => s.UpdateAppointmentTypeAsync(1, "Call", "#0000FF", 1))
+                       .ReturnsAsync((true, null));
+
+            // Act
+            var result = await controller.UpdateTypeAndColor(1, dto);
+
+            // Assert
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(okResult.Value);
+
+            // Use reflection to access anonymous object properties
+            var responseType = okResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            Assert.NotNull(messageProperty);
+
+            var messageValue = messageProperty.GetValue(okResult.Value);
+            Assert.Equal("Appointment type/color updated successfully", messageValue);
+        }
+
+        #endregion
     }
 }
