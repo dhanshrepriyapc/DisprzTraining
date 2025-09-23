@@ -68,7 +68,7 @@ namespace DisprzTraining.Business
 
 
         // Register new user
-        public async Task<User> RegisterAsync(string username, string password, string? timeZoneId = null)
+        public async Task<User> RegisterAsync(string username, string firstName, string lastName, string password, string? timeZoneId = null)
         {
             var existing = await _repository.GetByUsernameAsync(username);
             if (existing != null) throw new Exception("Username already exists");
@@ -79,7 +79,9 @@ namespace DisprzTraining.Business
                 // Hash password before storing
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
                 // PasswordHash = password,
-                TimeZoneId = timeZoneId ?? TimeZoneInfo.Local.Id
+                TimeZoneId = timeZoneId ?? TimeZoneInfo.Local.Id,
+                FirstName = firstName,
+                LastName = lastName
             };
 
             await _repository.AddAsync(user);

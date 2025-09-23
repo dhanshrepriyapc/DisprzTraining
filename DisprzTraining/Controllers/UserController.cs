@@ -22,9 +22,9 @@ namespace DisprzTraining.Controllers
         }
         
         [HttpPost("login")]
-                public async Task<IActionResult> Login([FromBody] LoginDto dto)
-                {
-                    var user = await _service.AuthenticateAsync(dto.Username, dto.Password);
+        public async Task<IActionResult> Login([FromBody] LoginDto dto)
+        {
+            var user = await _service.AuthenticateAsync(dto.Username, dto.Password);
             if (user == null) return Unauthorized(new { message = "Invalid credentials" });
             
             // Use the UserService method instead of controller method
@@ -32,10 +32,12 @@ namespace DisprzTraining.Controllers
             
             return Ok(new
             {
-                User = new UserDto
+                User = new UserDto  
                 {
                     Id = user.Id,
                     Username = user.Username,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
                     TimeZoneId = user.TimeZoneId
                 },
                 Token = token
@@ -50,14 +52,14 @@ namespace DisprzTraining.Controllers
             {
                 // Force IST if not provided
                 var tzId = string.IsNullOrEmpty(dto.TimeZoneId) 
-                    ? "India Standard Time" 
+                    ? "Asia/Calcutta" 
                     : dto.TimeZoneId;
 
-                var user = await _service.RegisterAsync(dto.Username, dto.Password, tzId);
+                var user = await _service.RegisterAsync(dto.Username, dto.FirstName,dto.LastName, dto.Password, tzId);
 
                 return CreatedAtAction(nameof(Register), 
                     new { id = user.Id }, 
-                    new UserDto { Id = user.Id, Username = user.Username });
+                    new UserDto { Id = user.Id, Username = user.Username, FirstName= user.FirstName, LastName= user.LastName });
             }
             catch (Exception ex)
             {

@@ -10,6 +10,11 @@ namespace DisprzTraining.Models
         public string Username { get; set; } = null!;
 
         [Required]
+        public string FirstName { get; set; } = null!;
+
+        public string LastName { get; set; } = null!;
+
+        [Required]
         public string PasswordHash { get; set; } = null!; // store hashed password
 
         // Each user has a fixed timezone
