@@ -122,7 +122,7 @@ namespace DisprzTraining.Business
                         // Create appointment
                         var appointment = new Appointment
                         {
-                            Title = dto.Title,
+                            Title = dto.Title ?? string.Empty, 
                             StartTime = occurrence,
                             EndTime = occurrenceEnd,
                             UserId = userId,
@@ -171,7 +171,7 @@ namespace DisprzTraining.Business
 
                     var appointment = new Appointment
                     {
-                        Title = dto.Title,
+                        Title = dto.Title ?? string.Empty, 
                         StartTime = start,
                         EndTime = end,
                         UserId = userId,
@@ -252,7 +252,7 @@ namespace DisprzTraining.Business
             if (userAppointments.Any(a => a.Id != id && start < a.EndTime && end > a.StartTime))
                 return (false, "Appointment time overlaps with existing appointment");
 
-            appointment.Title = dto.Title;
+            appointment.Title = dto.Title?? appointment.Title;
             appointment.StartTime = start;
             appointment.EndTime = end;
             appointment.Description = dto.Description;

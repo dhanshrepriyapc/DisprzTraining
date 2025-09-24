@@ -44,11 +44,11 @@ namespace DisprzTraining.Business
 
             var claims = new[]
             {
-        new Claim(JwtRegisteredClaimNames.Sub, user.Username),
-        new Claim("id", user.Id.ToString()),
-        new Claim("timeZoneId", user.TimeZoneId), // This should now include America/Chihuahua
-        new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-         };
+                new Claim(JwtRegisteredClaimNames.Sub, user.Username),
+                new Claim("id", user.Id.ToString()),
+                new Claim("timeZoneId", user.TimeZoneId),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            };
 
             Console.WriteLine($"JWT Claims: {string.Join(", ", claims.Select(c => $"{c.Type}={c.Value}"))}");
 

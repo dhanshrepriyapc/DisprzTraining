@@ -6,7 +6,7 @@ namespace DisprzTraining.Models
     {
         public int Id { get; set; }
 
-        [Required]
+        [Required] 
         public string Username { get; set; } = null!;
 
         [Required]

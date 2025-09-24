@@ -30,7 +30,6 @@ namespace DisprzTraining.Controllers
             }
 
         // Convert UTC to user's local time
-        // Convert UTC to user's local time
         private DateTime ToUserTime(DateTime utcTime)
         {
             var timeZoneId = GetUserTimeZoneId();
@@ -88,6 +87,9 @@ namespace DisprzTraining.Controllers
 
             var (success, error, appointment) = await _service.CreateAppointmentAsync(dto, userId);
             if (!success) return Conflict(new { message = error });
+            
+            if (appointment == null)
+                return StatusCode(500, new { message = "Failed to create appointment" });
 
             // Convert times back to user local
             var newdto = new AppointmentDto
