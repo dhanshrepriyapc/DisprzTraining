@@ -221,7 +221,7 @@ var assemblies = [
   {
     "name": "DisprzTraining",
     "classes": [
-      { "name": "DisprzTraining.Business.AppointmentService", "rp": "DisprzTraining_AppointmentService.html", "cl": 287, "ucl": 16, "cal": 303, "tl": 335, "cb": 150, "tb": 178, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
+      { "name": "DisprzTraining.Business.AppointmentService", "rp": "DisprzTraining_AppointmentService.html", "cl": 287, "ucl": 16, "cal": 303, "tl": 335, "cb": 151, "tb": 178, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
       { "name": "DisprzTraining.Business.UserService", "rp": "DisprzTraining_UserService.html", "cl": 68, "ucl": 0, "cal": 68, "tl": 114, "cb": 18, "tb": 18, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
       { "name": "DisprzTraining.Controllers.AppointmentsController", "rp": "DisprzTraining_AppointmentsController.html", "cl": 131, "ucl": 0, "cal": 131, "tl": 229, "cb": 34, "tb": 34, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
       { "name": "DisprzTraining.Controllers.UsersController", "rp": "DisprzTraining_UsersController.html", "cl": 35, "ucl": 0, "cal": 35, "tl": 70, "cb": 4, "tb": 4, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },

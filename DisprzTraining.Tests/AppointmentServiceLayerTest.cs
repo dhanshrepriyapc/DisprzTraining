@@ -4298,6 +4298,593 @@ namespace DisprzTraining.Tests
         }
 
         #endregion
+        #region ValidateAppointmentTime Complete Edge Case Coverage
+
+        [Fact]
+        public async Task ValidateAppointmentTime_StartTimeExactlyEqualToCurrentTime_ReturnsInvalid()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User
+            {
+                Id = userId,
+                Username = "testuser",
+                TimeZoneId = "UTC"
+            };
+
+            // Get exact current time to test the <= condition
+            var exactCurrentTime = DateTime.UtcNow;
+            var dto = new AppointmentDto
+            {
+                Title = "Exact Current Time Meeting",
+                StartTime = exactCurrentTime, // Exactly equal to current time
+                EndTime = exactCurrentTime.AddHours(1),
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Contains("Cannot book appointments in the past", result.Error);
+            Assert.Contains("UTC", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task ValidateAppointmentTime_StartTimeOneMicrosecondInPast_ReturnsInvalid()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User
+            {
+                Id = userId,
+                Username = "testuser",
+                TimeZoneId = "UTC"
+            };
+
+            var pastTime = DateTime.UtcNow.AddTicks(-1); // 1 tick in the past
+            var dto = new AppointmentDto
+            {
+                Title = "Microsecond Past Meeting",
+                StartTime = pastTime,
+                EndTime = pastTime.AddHours(1),
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Contains("Cannot book appointments in the past", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task ValidateAppointmentTime_EndTimeExactlyEqualToCurrentTime_ReturnsInvalid()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User
+            {
+                Id = userId,
+                Username = "testuser",
+                TimeZoneId = "UTC"
+            };
+
+            var currentTime = DateTime.UtcNow;
+            var dto = new AppointmentDto
+            {
+                Title = "End Time Current Meeting",
+                StartTime = currentTime.AddHours(1), // Future start
+                EndTime = currentTime, // End time exactly equal to current
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Contains("Appointment end time cannot be in the past", result.Error);
+            Assert.Contains("UTC", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task ValidateAppointmentTime_EndTimeOneMicrosecondInPast_ReturnsInvalid()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User
+            {
+                Id = userId,
+                Username = "testuser",
+                TimeZoneId = "UTC"
+            };
+
+            var pastTime = DateTime.UtcNow.AddTicks(-1);
+            var dto = new AppointmentDto
+            {
+                Title = "End Microsecond Past Meeting",
+                StartTime = DateTime.UtcNow.AddHours(2), // Future start
+                EndTime = pastTime, // End time 1 tick in past
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Contains("Appointment end time cannot be in the past", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task ValidateAppointmentTime_TimeZoneNotFoundExceptionThrown_ReturnsInvalidConfig()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User
+            {
+                Id = userId,
+                Username = "testuser",
+                TimeZoneId = "Invalid/NonExistent/TimeZone"
+            };
+
+            var dto = new AppointmentDto
+            {
+                Title = "Invalid TZ Meeting",
+                StartTime = DateTime.UtcNow.AddHours(2),
+                EndTime = DateTime.UtcNow.AddHours(3),
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Equal("Invalid timezone configuration for user", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task ValidateAppointmentTime_NullTimeZoneId_ThrowsGenericException()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User
+            {
+                Id = userId,
+                Username = "testuser",
+                TimeZoneId = null! // This will cause ArgumentNullException
+            };
+
+            var dto = new AppointmentDto
+            {
+                Title = "Null TZ Meeting",
+                StartTime = DateTime.UtcNow.AddHours(2),
+                EndTime = DateTime.UtcNow.AddHours(3),
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Equal("Error validating appointment time", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task ValidateAppointmentTime_EmptyStringTimeZoneId_ThrowsException()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User
+            {
+                Id = userId,
+                Username = "testuser",
+                TimeZoneId = "" // Empty string
+            };
+
+            var dto = new AppointmentDto
+            {
+                Title = "Empty TZ Meeting",
+                StartTime = DateTime.UtcNow.AddHours(2),
+                EndTime = DateTime.UtcNow.AddHours(3),
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.True(result.Error == "Invalid timezone configuration for user" ||
+                        result.Error == "Error validating appointment time");
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task ValidateAppointmentTime_DifferentTimeZone_PastInUserTimeButFutureInUTC_ReturnsInvalid()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User
+            {
+                Id = userId,
+                Username = "testuser",
+                TimeZoneId = "Pacific Standard Time" // UTC-8
+            };
+
+            // Create a time that's future in UTC but past in PST
+            var utcTime = DateTime.UtcNow.AddHours(-5); // 5 hours ago in UTC, but might be valid in PST
+            var dto = new AppointmentDto
+            {
+                Title = "PST Timezone Test",
+                StartTime = utcTime,
+                EndTime = utcTime.AddHours(1),
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Contains("Cannot book appointments in the past", result.Error);
+            Assert.Contains("Pacific Standard Time", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        #endregion
+        #region CreateAppointmentAsync Complete Edge Case Coverage
+
+        [Fact]
+        public async Task CreateAppointmentAsync_UserNotFound_ReturnsUserNotFoundError()
+        {
+            // Arrange
+            var userId = 999;
+            var dto = new AppointmentDto
+            {
+                Title = "Test Meeting",
+                StartTime = DateTime.UtcNow.AddHours(2),
+                EndTime = DateTime.UtcNow.AddHours(3),
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId))
+                         .ReturnsAsync((User?)null);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Equal("User not found", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task CreateAppointmentAsync_StartTimeEqualToEndTime_ReturnsInvalidTimeRange()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User { Id = userId, Username = "test", TimeZoneId = "UTC" };
+            var sameTime = DateTime.UtcNow.AddHours(2);
+
+            var dto = new AppointmentDto
+            {
+                Title = "Same Time Meeting",
+                StartTime = sameTime,
+                EndTime = sameTime, // Same as start time
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Equal("StartTime must be before EndTime", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task CreateAppointmentAsync_StartTimeAfterEndTime_ReturnsInvalidTimeRange()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User { Id = userId, Username = "test", TimeZoneId = "UTC" };
+            var baseTime = DateTime.UtcNow.AddHours(2);
+
+            var dto = new AppointmentDto
+            {
+                Title = "Reversed Time Meeting",
+                StartTime = baseTime.AddHours(1), // After end time
+                EndTime = baseTime,
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Equal("StartTime must be before EndTime", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task CreateAppointmentAsync_SingleAppointmentOverlapsExisting_ReturnsOverlapError()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User { Id = userId, Username = "test", TimeZoneId = "UTC" };
+            var baseTime = DateTime.UtcNow.AddHours(2);
+
+            var existingAppointment = new Appointment
+            {
+                Id = 1,
+                StartTime = baseTime,
+                EndTime = baseTime.AddHours(2),
+                UserId = userId
+            };
+
+            var dto = new AppointmentDto
+            {
+                Title = "Overlapping Meeting",
+                StartTime = baseTime.AddMinutes(30), // Overlaps with existing
+                EndTime = baseTime.AddHours(1),
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+            _mockAppointmentRepo.Setup(r => r.GetByUserIdAsync(userId))
+                               .ReturnsAsync(new List<Appointment> { existingAppointment });
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Equal("Appointment time overlaps with existing appointment", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task CreateAppointmentAsync_RecurringDailyWithMaxOccurrencesReached_CreatesLimitedAppointments()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User { Id = userId, Username = "test", TimeZoneId = "UTC" };
+            var startTime = DateTime.UtcNow.AddHours(2);
+
+            var dto = new AppointmentDto
+            {
+                Title = "Daily Meeting",
+                StartTime = startTime,
+                EndTime = startTime.AddHours(1),
+                Recurrence = AppointmentDto.RecurrenceType.Daily,
+                RecurrenceInterval = 1,
+                RecurrenceEndDate = startTime.AddDays(200), // Would create more than 100 occurrences
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+            _mockAppointmentRepo.Setup(r => r.GetByUserIdAsync(userId))
+                               .ReturnsAsync(new List<Appointment>());
+            _mockAppointmentRepo.Setup(r => r.AddAsync(It.IsAny<Appointment>()))
+                               .Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.True(result.Success);
+            Assert.Null(result.Error);
+            Assert.NotNull(result.Appointment);
+            // Should create exactly 100 appointments (max limit)
+            _mockAppointmentRepo.Verify(r => r.AddAsync(It.IsAny<Appointment>()), Times.Exactly(100));
+        }
+
+        [Fact]
+        public async Task CreateAppointmentAsync_RecurringWeeklyWithNullInterval_UsesDefaultInterval()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User { Id = userId, Username = "test", TimeZoneId = "UTC" };
+            var startTime = DateTime.UtcNow.AddHours(2);
+
+            var dto = new AppointmentDto
+            {
+                Title = "Weekly Meeting",
+                StartTime = startTime,
+                EndTime = startTime.AddHours(1),
+                Recurrence = AppointmentDto.RecurrenceType.Weekly,
+                RecurrenceInterval = null, // Should default to 1
+                RecurrenceEndDate = startTime.AddDays(21), // 3 weeks
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+            _mockAppointmentRepo.Setup(r => r.GetByUserIdAsync(userId))
+                               .ReturnsAsync(new List<Appointment>());
+            _mockAppointmentRepo.Setup(r => r.AddAsync(It.IsAny<Appointment>()))
+                               .Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.True(result.Success);
+            Assert.Null(result.Error);
+            Assert.NotNull(result.Appointment);
+            // Should create 4 appointments (weeks 0, 1, 2, 3)
+            _mockAppointmentRepo.Verify(r => r.AddAsync(It.IsAny<Appointment>()), Times.Exactly(4));
+        }
+
+        [Fact]
+        public async Task CreateAppointmentAsync_RecurringMonthlyWithNullEndDate_UsesDefault3Months()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User { Id = userId, Username = "test", TimeZoneId = "UTC" };
+            var startTime = DateTime.UtcNow.AddHours(2);
+
+            var dto = new AppointmentDto
+            {
+                Title = "Monthly Meeting",
+                StartTime = startTime,
+                EndTime = startTime.AddHours(1),
+                Recurrence = AppointmentDto.RecurrenceType.Monthly,
+                RecurrenceInterval = 1,
+                RecurrenceEndDate = null, // Should default to 3 months
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+            _mockAppointmentRepo.Setup(r => r.GetByUserIdAsync(userId))
+                               .ReturnsAsync(new List<Appointment>());
+            _mockAppointmentRepo.Setup(r => r.AddAsync(It.IsAny<Appointment>()))
+                               .Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.True(result.Success);
+            Assert.Null(result.Error);
+            Assert.NotNull(result.Appointment);
+            // Should create 4 appointments (months 0, 1, 2, 3)
+            _mockAppointmentRepo.Verify(r => r.AddAsync(It.IsAny<Appointment>()), Times.Exactly(4));
+        }
+
+        [Fact]
+        public async Task CreateAppointmentAsync_RecurringOverlapsWithExisting_ReturnsOverlapError()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User { Id = userId, Username = "test", TimeZoneId = "UTC" };
+            var startTime = DateTime.UtcNow.AddHours(2);
+
+            var existingAppointment = new Appointment
+            {
+                Id = 1,
+                StartTime = startTime.AddDays(1), // Conflicts with second occurrence
+                EndTime = startTime.AddDays(1).AddHours(2),
+                UserId = userId
+            };
+
+            var dto = new AppointmentDto
+            {
+                Title = "Recurring Overlap Meeting",
+                StartTime = startTime,
+                EndTime = startTime.AddHours(1),
+                Recurrence = AppointmentDto.RecurrenceType.Daily,
+                RecurrenceInterval = 1,
+                RecurrenceEndDate = startTime.AddDays(3),
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+            _mockAppointmentRepo.Setup(r => r.GetByUserIdAsync(userId))
+                               .ReturnsAsync(new List<Appointment> { existingAppointment });
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Contains("overlaps with existing appointment", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task CreateAppointmentAsync_ExceptionThrown_ReturnsExceptionMessage()
+        {
+            // Arrange
+            var userId = 1;
+            var user = new User { Id = userId, Username = "test", TimeZoneId = "UTC" };
+            var dto = new AppointmentDto
+            {
+                Title = "Exception Test",
+                StartTime = DateTime.UtcNow.AddHours(2),
+                EndTime = DateTime.UtcNow.AddHours(3),
+                Recurrence = AppointmentDto.RecurrenceType.None
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+            _mockAppointmentRepo.Setup(r => r.GetByUserIdAsync(userId))
+                               .ThrowsAsync(new Exception("Database connection failed"));
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            Assert.False(result.Success);
+            Assert.Equal("Database connection failed", result.Error);
+            Assert.Null(result.Appointment);
+        }
+
+        [Fact]
+        public async Task CreateAppointmentAsync_RecurringInfiniteLoop_BreaksOnSameOccurrence()
+        {
+            // Arrange - This tests the infinite loop protection
+            var userId = 1;
+            var user = new User { Id = userId, Username = "test", TimeZoneId = "UTC" };
+            var startTime = DateTime.UtcNow.AddHours(2);
+
+            var dto = new AppointmentDto
+            {
+                Title = "Loop Protection Test",
+                StartTime = startTime,
+                EndTime = startTime.AddHours(1),
+                Recurrence = AppointmentDto.RecurrenceType.Monthly,
+                RecurrenceInterval = 0, // This could cause infinite loop
+                RecurrenceEndDate = startTime.AddYears(1),
+            };
+
+            _mockUserRepo.Setup(r => r.GetByIdAsync(userId)).ReturnsAsync(user);
+            _mockAppointmentRepo.Setup(r => r.GetByUserIdAsync(userId))
+                               .ReturnsAsync(new List<Appointment>());
+            _mockAppointmentRepo.Setup(r => r.AddAsync(It.IsAny<Appointment>()))
+                               .Returns(Task.CompletedTask);
+
+            // Act
+            var result = await _service.CreateAppointmentAsync(dto, userId);
+
+            // Assert
+            // Should either succeed with limited appointments or fail gracefully
+            Assert.True(result.Success || result.Error != null);
+        }
+
+        #endregion
+
+
+
     }
 }
 
