@@ -506,5 +506,342 @@ namespace DisprzTraining.Tests
         }
 
         #endregion
+        // Add these tests to your existing AppointmentsControllerTest class
+
+        #region GetUserAppointmentById Tests
+        [Fact]
+        public async Task GetUserAppointmentById_ValidId_ReturnsAppointment()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+            
+            var appointment = new Appointment
+            {
+                Id = 1,
+                Title = "Test Meeting",
+                StartTime = DateTime.UtcNow.AddHours(1),
+                EndTime = DateTime.UtcNow.AddHours(2),
+                Type = "Meeting",
+                ColorCode = "#FF0000",
+                UserId = 1
+            };
+
+            mockService.Setup(s => s.GetAppointmentByIdAsync(1))
+                    .ReturnsAsync(appointment);
+
+            // Act
+            var result = await controller.GetUserAppointmentById(1);
+
+            // Assert
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            var returnedDto = Assert.IsType<AppointmentDto>(okResult.Value);
+            Assert.Equal("Test Meeting", returnedDto.Title);
+            Assert.Equal(1, returnedDto.Id);
+        }
+
+        [Fact]
+        public async Task GetUserAppointmentById_AppointmentNotFound_ReturnsNotFound()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.GetAppointmentByIdAsync(1))
+                    .ReturnsAsync((Appointment?)null);
+
+            // Act
+            var result = await controller.GetUserAppointmentById(1);
+
+            // Assert
+            var notFoundResult = Assert.IsType<NotFoundObjectResult>(result);
+            var responseType = notFoundResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            var messageValue = messageProperty!.GetValue(notFoundResult.Value);
+            Assert.Equal("Appointment not found", messageValue);
+        }
+
+        [Fact]
+        public async Task GetUserAppointmentById_WrongUser_ReturnsNotFound()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1); // User ID 1
+            
+            var appointment = new Appointment
+            {
+                Id = 1,
+                Title = "Test Meeting",
+                StartTime = DateTime.UtcNow.AddHours(1),
+                EndTime = DateTime.UtcNow.AddHours(2),
+                Type = "Meeting",
+                ColorCode = "#FF0000",
+                UserId = 2 // Different user ID
+            };
+
+            mockService.Setup(s => s.GetAppointmentByIdAsync(1))
+                    .ReturnsAsync(appointment);
+
+            // Act
+            var result = await controller.GetUserAppointmentById(1);
+
+            // Assert
+            var notFoundResult = Assert.IsType<NotFoundObjectResult>(result);
+            var responseType = notFoundResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            var messageValue = messageProperty!.GetValue(notFoundResult.Value);
+            Assert.Equal("Appointment not found", messageValue);
+        }
+        #endregion
+
+        #region Additional CreateUserAppointment Tests
+        [Fact]
+        public async Task CreateUserAppointment_NullAppointmentReturned_ReturnsInternalServerError()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+            
+            var dto = new AppointmentDto
+            {
+                Title = "Test Meeting",
+                StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 10, 0, 0), DateTimeKind.Unspecified),
+                EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 11, 0, 0), DateTimeKind.Unspecified),
+                Type = "Meeting",
+                ColorCode = "#FF0000"
+            };
+
+            mockService.Setup(s => s.CreateAppointmentAsync(It.IsAny<AppointmentDto>(), 1))
+                    .ReturnsAsync((true, null, (Appointment?)null)); // Success but null appointment
+
+            // Act
+            var result = await controller.CreateUserAppointment(dto);
+
+            // Assert
+            var statusCodeResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(500, statusCodeResult.StatusCode);
+            var responseType = statusCodeResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            var messageValue = messageProperty!.GetValue(statusCodeResult.Value);
+            Assert.Equal("Failed to create appointment", messageValue);
+        }
+        #endregion
+
+        #region Additional UpdateUserAppointment Tests
+        [Fact]
+        public async Task UpdateUserAppointment_InvalidTimeRange_ReturnsBadRequest()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+            
+            var dto = new AppointmentDto
+            {
+                Title = "Updated Meeting",
+                StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 15, 0, 0), DateTimeKind.Unspecified), // Start after end
+                EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 14, 0, 0), DateTimeKind.Unspecified),
+                Type = "Meeting",
+                ColorCode = "#00FF00"
+            };
+
+            // Act
+            var result = await controller.UpdateUserAppointment(1, dto);
+
+            // Assert
+            var badRequestResult = Assert.IsType<BadRequestObjectResult>(result);
+            var responseType = badRequestResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            var messageValue = messageProperty!.GetValue(badRequestResult.Value);
+            Assert.Equal("StartTime must be before EndTime", messageValue);
+        }
+
+        [Fact]
+        public async Task UpdateUserAppointment_OtherError_ReturnsConflict()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+            
+            var dto = new AppointmentDto
+            {
+                Title = "Updated Meeting",
+                StartTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 14, 0, 0), DateTimeKind.Unspecified),
+                EndTime = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 15, 0, 0), DateTimeKind.Unspecified),
+                Type = "Meeting",
+                ColorCode = "#00FF00"
+            };
+
+            mockService.Setup(s => s.UpdateAppointmentAsync(1, It.IsAny<AppointmentDto>(), 1))
+                    .ReturnsAsync((false, "Time slot conflicts with another appointment"));
+
+            // Act
+            var result = await controller.UpdateUserAppointment(1, dto);
+
+            // Assert
+            var conflictResult = Assert.IsType<ConflictObjectResult>(result);
+            var responseType = conflictResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            var messageValue = messageProperty!.GetValue(conflictResult.Value);
+            Assert.Equal("Time slot conflicts with another appointment", messageValue);
+        }
+        #endregion
+
+        #region Additional DeleteUserAppointment Tests
+        [Fact]
+        public async Task DeleteUserAppointment_Unauthorized_ReturnsUnauthorized()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                    .ReturnsAsync((false, "Unauthorized"));
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result);
+            var responseType = unauthorizedResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            var messageValue = messageProperty!.GetValue(unauthorizedResult.Value);
+            Assert.Equal("Cannot delete another user's appointment", messageValue);
+        }
+        #endregion
+
+        #region Additional UpdateTypeAndColor Tests
+        [Fact]
+        public async Task UpdateTypeAndColor_NotFound_ReturnsNotFound()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+            
+            var dto = new AppointmentDto
+            {
+                Type = "Call",
+                ColorCode = "#0000FF"
+            };
+
+            mockService.Setup(s => s.UpdateAppointmentTypeAsync(1, "Call", "#0000FF", 1))
+                    .ReturnsAsync((false, "Not found"));
+
+            // Act
+            var result = await controller.UpdateTypeAndColor(1, dto);
+
+            // Assert
+            var notFoundResult = Assert.IsType<NotFoundObjectResult>(result);
+            var responseType = notFoundResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            var messageValue = messageProperty!.GetValue(notFoundResult.Value);
+            Assert.Equal("Appointment not found", messageValue);
+        }
+
+        [Fact]
+        public async Task UpdateTypeAndColor_Unauthorized_ReturnsUnauthorized()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+            
+            var dto = new AppointmentDto
+            {
+                Type = "Call",
+                ColorCode = "#0000FF"
+            };
+
+            mockService.Setup(s => s.UpdateAppointmentTypeAsync(1, "Call", "#0000FF", 1))
+                    .ReturnsAsync((false, "Unauthorized"));
+
+            // Act
+            var result = await controller.UpdateTypeAndColor(1, dto);
+
+            // Assert
+            var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result);
+            var responseType = unauthorizedResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            var messageValue = messageProperty!.GetValue(unauthorizedResult.Value);
+            Assert.Equal("Cannot edit another user's appointment", messageValue);
+        }
+
+        [Fact]
+        public async Task UpdateTypeAndColor_OtherError_ReturnsConflict()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+            
+            var dto = new AppointmentDto
+            {
+                Type = "Call",
+                ColorCode = "#0000FF"
+            };
+
+            mockService.Setup(s => s.UpdateAppointmentTypeAsync(1, "Call", "#0000FF", 1))
+                    .ReturnsAsync((false, "Some other error"));
+
+            // Act
+            var result = await controller.UpdateTypeAndColor(1, dto);
+
+            // Assert
+            var conflictResult = Assert.IsType<ConflictObjectResult>(result);
+            var responseType = conflictResult.Value!.GetType();
+            var messageProperty = responseType.GetProperty("message");
+            var messageValue = messageProperty!.GetValue(conflictResult.Value);
+            Assert.Equal("Some other error", messageValue);
+        }
+        #endregion
+
+        #region TimeZone Helper Tests
+        [Fact]
+        public async Task GetUserAppointments_WithoutTimeZoneClaim_DefaultsToUTC()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = new AppointmentsController(mockService.Object);
+            
+            // Create controller with claims but no timeZoneId
+            var claims = new List<Claim>
+            {
+                new Claim("id", "1")
+                // No timeZoneId claim
+            };
+            var identity = new ClaimsIdentity(claims, "TestAuth");
+            var principal = new ClaimsPrincipal(identity);
+            var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+            {
+                User = principal
+            };
+            controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
+            {
+                HttpContext = httpContext
+            };
+
+            var appointments = new List<AppointmentDto>
+            {
+                new AppointmentDto
+                {
+                    Id = 1,
+                    Title = "Test Meeting",
+                    StartTime = DateTime.UtcNow.AddHours(1),
+                    EndTime = DateTime.UtcNow.AddHours(2),
+                    Type = "Meeting",
+                    ColorCode = "#FF0000"
+                }
+            };
+
+            mockService.Setup(s => s.GetAppointmentsForUserAsync(1))
+                    .ReturnsAsync(appointments);
+
+            // Act
+            var result = await controller.GetUserAppointments();
+
+            // Assert
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            var returnedAppointments = Assert.IsType<List<AppointmentDto>>(okResult.Value);
+            Assert.Single(returnedAppointments);
+        }
+        #endregion
+
     }
 }

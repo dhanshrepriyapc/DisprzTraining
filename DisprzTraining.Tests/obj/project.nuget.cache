@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "NhgpuIaGzD4PELlUQBZdEDieklOKQmNGuyXVENNbzMU0C9IIJXuxzQKKXasBLn2ZigicSMLXE5o/eod6MVNHOQ==",
+  "dgSpecHash": "QlAyGu4c4JPEJJ89ZSeTzzH+v8Qezs765WtTCYF1zw8ylU7p6efr28W/EeVCzGqz6ubgGxnEmeFnNF+EaFR96g==",
   "success": true,
   "projectFilePath": "C:\\Users\\dhanshrepriya.p_disp\\calendar\\DisprzTraining\\DisprzTraining.Tests\\DisprzTraining.Tests.csproj",
   "expectedPackageFiles": [
@@ -8,7 +8,7 @@
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\azure.identity\\1.10.3\\azure.identity.1.10.3.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\bcrypt.net-next\\4.0.3\\bcrypt.net-next.4.0.3.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\castle.core\\5.1.1\\castle.core.5.1.1.nupkg.sha512",
-    "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\coverlet.collector\\3.2.0\\coverlet.collector.3.2.0.nupkg.sha512",
+    "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\coverlet.collector\\6.0.4\\coverlet.collector.6.0.4.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\humanizer.core\\2.2.0\\humanizer.core.2.2.0.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\messagepack\\2.1.152\\messagepack.2.1.152.nupkg.sha512",
     "C:\\Users\\dhanshrepriya.p_disp\\.nuget\\packages\\messagepack.annotations\\2.1.152\\messagepack.annotations.2.1.152.nupkg.sha512",

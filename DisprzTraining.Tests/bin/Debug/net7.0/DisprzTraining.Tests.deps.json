@@ -12,7 +12,7 @@
           "Microsoft.EntityFrameworkCore.InMemory": "7.0.0",
           "Microsoft.NET.Test.Sdk": "17.5.0",
           "Moq": "4.20.69",
-          "coverlet.collector": "3.2.0",
+          "coverlet.collector": "6.0.4",
           "xunit": "2.4.2",
           "xunit.runner.visualstudio": "2.4.5"
         },
@@ -73,7 +73,7 @@
           }
         }
       },
-      "coverlet.collector/3.2.0": {},
+      "coverlet.collector/6.0.4": {},
       "Humanizer.Core/2.2.0": {
         "dependencies": {
           "NETStandard.Library": "1.6.1"
@@ -2789,12 +2789,12 @@
       "path": "castle.core/5.1.1",
       "hashPath": "castle.core.5.1.1.nupkg.sha512"
     },
-    "coverlet.collector/3.2.0": {
+    "coverlet.collector/6.0.4": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-xjY8xBigSeWIYs4I7DgUHqSNoGqnHi7Fv7/7RZD02rvZyG3hlsjnQKiVKVWKgr9kRKgmV+dEfu8KScvysiC0Wg==",
-      "path": "coverlet.collector/3.2.0",
-      "hashPath": "coverlet.collector.3.2.0.nupkg.sha512"
+      "sha512": "sha512-lkhqpF8Pu2Y7IiN7OntbsTtdbpR1syMsm2F3IgX6ootA4ffRqWL5jF7XipHuZQTdVuWG/gVAAcf8mjk8Tz0xPg==",
+      "path": "coverlet.collector/6.0.4",
+      "hashPath": "coverlet.collector.6.0.4.nupkg.sha512"
     },
     "Humanizer.Core/2.2.0": {
       "type": "package",
