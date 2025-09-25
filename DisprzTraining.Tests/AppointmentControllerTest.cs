@@ -515,7 +515,7 @@ namespace DisprzTraining.Tests
             // Arrange
             var mockService = new Mock<IAppointmentService>();
             var controller = CreateControllerWithUser(mockService, 1);
-            
+
             var appointment = new Appointment
             {
                 Id = 1,
@@ -567,7 +567,7 @@ namespace DisprzTraining.Tests
             // Arrange
             var mockService = new Mock<IAppointmentService>();
             var controller = CreateControllerWithUser(mockService, 1); // User ID 1
-            
+
             var appointment = new Appointment
             {
                 Id = 1,
@@ -601,7 +601,7 @@ namespace DisprzTraining.Tests
             // Arrange
             var mockService = new Mock<IAppointmentService>();
             var controller = CreateControllerWithUser(mockService, 1);
-            
+
             var dto = new AppointmentDto
             {
                 Title = "Test Meeting",
@@ -634,7 +634,7 @@ namespace DisprzTraining.Tests
             // Arrange
             var mockService = new Mock<IAppointmentService>();
             var controller = CreateControllerWithUser(mockService, 1);
-            
+
             var dto = new AppointmentDto
             {
                 Title = "Updated Meeting",
@@ -661,7 +661,7 @@ namespace DisprzTraining.Tests
             // Arrange
             var mockService = new Mock<IAppointmentService>();
             var controller = CreateControllerWithUser(mockService, 1);
-            
+
             var dto = new AppointmentDto
             {
                 Title = "Updated Meeting",
@@ -716,7 +716,7 @@ namespace DisprzTraining.Tests
             // Arrange
             var mockService = new Mock<IAppointmentService>();
             var controller = CreateControllerWithUser(mockService, 1);
-            
+
             var dto = new AppointmentDto
             {
                 Type = "Call",
@@ -743,7 +743,7 @@ namespace DisprzTraining.Tests
             // Arrange
             var mockService = new Mock<IAppointmentService>();
             var controller = CreateControllerWithUser(mockService, 1);
-            
+
             var dto = new AppointmentDto
             {
                 Type = "Call",
@@ -770,7 +770,7 @@ namespace DisprzTraining.Tests
             // Arrange
             var mockService = new Mock<IAppointmentService>();
             var controller = CreateControllerWithUser(mockService, 1);
-            
+
             var dto = new AppointmentDto
             {
                 Type = "Call",
@@ -799,7 +799,7 @@ namespace DisprzTraining.Tests
             // Arrange
             var mockService = new Mock<IAppointmentService>();
             var controller = new AppointmentsController(mockService.Object);
-            
+
             // Create controller with claims but no timeZoneId
             var claims = new List<Claim>
             {
@@ -842,6 +842,238 @@ namespace DisprzTraining.Tests
             Assert.Single(returnedAppointments);
         }
         #endregion
+        #region Additional DeleteUserAppointment Tests - Complete Coverage
+
+        [Fact]
+        public async Task DeleteUserAppointment_ServiceReturnsSuccessFalseWithOtherError_ReturnsNoContent()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                       .ReturnsAsync((false, "Some database error")); // Not "Not found" or "Unauthorized"
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            // Based on the controller code, if error is not "Not found" or "Unauthorized", it falls through to return NoContent
+            Assert.IsType<NoContentResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(1, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_ServiceReturnsSuccessFalseWithNullError_ReturnsNoContent()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                       .ReturnsAsync((false, null)); // Null error
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            // Null error doesn't match "Not found" or "Unauthorized", so falls through to NoContent
+            Assert.IsType<NoContentResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(1, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_ServiceReturnsSuccessFalseWithEmptyError_ReturnsNoContent()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                       .ReturnsAsync((false, "")); // Empty string error
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            // Empty string doesn't match "Not found" or "Unauthorized", so falls through to NoContent
+            Assert.IsType<NoContentResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(1, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_ZeroId_CallsServiceWithZero()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(0, 1))
+                       .ReturnsAsync((false, "Not found"));
+
+            // Act
+            var result = await controller.DeleteUserAppointment(0);
+
+            // Assert
+            var notFoundResult = Assert.IsType<NotFoundObjectResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(0, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_NegativeId_CallsServiceWithNegativeId()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(-5, 1))
+                       .ReturnsAsync((false, "Not found"));
+
+            // Act
+            var result = await controller.DeleteUserAppointment(-5);
+
+            // Assert
+            var notFoundResult = Assert.IsType<NotFoundObjectResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(-5, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_LargeId_HandlesCorrectly()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(int.MaxValue, 1))
+                       .ReturnsAsync((true, null));
+
+            // Act
+            var result = await controller.DeleteUserAppointment(int.MaxValue);
+
+            // Assert
+            Assert.IsType<NoContentResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(int.MaxValue, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_ServiceThrowsException_ExceptionPropagates()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                       .ThrowsAsync(new Exception("Database connection failed"));
+
+            // Act & Assert
+            var exception = await Assert.ThrowsAsync<Exception>(() =>
+                controller.DeleteUserAppointment(1));
+
+            Assert.Equal("Database connection failed", exception.Message);
+            mockService.Verify(s => s.DeleteAppointmentAsync(1, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_DifferentUserId_ExtractsCorrectUserIdFromClaims()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var expectedUserId = 999;
+            var controller = CreateControllerWithUser(mockService, expectedUserId); // Different user ID
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, expectedUserId))
+                       .ReturnsAsync((true, null));
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            Assert.IsType<NoContentResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(1, expectedUserId), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_CaseSensitiveErrorMessages_HandlesCorrectly()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            // Test case sensitivity - "not found" vs "Not found"
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                       .ReturnsAsync((false, "not found")); // lowercase
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            // Should fall through to NoContent because it's case-sensitive match
+            Assert.IsType<NoContentResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(1, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_CaseSensitiveUnauthorized_HandlesCorrectly()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            // Test case sensitivity - "unauthorized" vs "Unauthorized"
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                       .ReturnsAsync((false, "unauthorized")); // lowercase
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            // Should fall through to NoContent because it's case-sensitive match
+            Assert.IsType<NoContentResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(1, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_ErrorMessageWithExtraSpaces_HandlesCorrectly()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                       .ReturnsAsync((false, " Not found ")); // Extra spaces
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            // Should fall through to NoContent because exact match is required
+            Assert.IsType<NoContentResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(1, 1), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUserAppointment_PartialErrorMatch_HandlesCorrectly()
+        {
+            // Arrange
+            var mockService = new Mock<IAppointmentService>();
+            var controller = CreateControllerWithUser(mockService, 1);
+
+            mockService.Setup(s => s.DeleteAppointmentAsync(1, 1))
+                       .ReturnsAsync((false, "Appointment Not found in database")); // Contains "Not found" but not exact
+
+            // Act
+            var result = await controller.DeleteUserAppointment(1);
+
+            // Assert
+            // Should fall through to NoContent because exact match is required
+            Assert.IsType<NoContentResult>(result);
+            mockService.Verify(s => s.DeleteAppointmentAsync(1, 1), Times.Once);
+        }
+
+        #endregion
+
+
+
 
     }
 }

@@ -221,9 +221,9 @@ var assemblies = [
   {
     "name": "DisprzTraining",
     "classes": [
-      { "name": "DisprzTraining.Business.AppointmentService", "rp": "DisprzTraining_AppointmentService.html", "cl": 202, "ucl": 24, "cal": 226, "tl": 335, "cb": 58, "tb": 70, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
+      { "name": "DisprzTraining.Business.AppointmentService", "rp": "DisprzTraining_AppointmentService.html", "cl": 287, "ucl": 16, "cal": 303, "tl": 335, "cb": 150, "tb": 178, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
       { "name": "DisprzTraining.Business.UserService", "rp": "DisprzTraining_UserService.html", "cl": 68, "ucl": 0, "cal": 68, "tl": 114, "cb": 18, "tb": 18, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
-      { "name": "DisprzTraining.Controllers.AppointmentsController", "rp": "DisprzTraining_AppointmentsController.html", "cl": 130, "ucl": 1, "cal": 131, "tl": 229, "cb": 33, "tb": 34, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
+      { "name": "DisprzTraining.Controllers.AppointmentsController", "rp": "DisprzTraining_AppointmentsController.html", "cl": 131, "ucl": 0, "cal": 131, "tl": 229, "cb": 34, "tb": 34, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
       { "name": "DisprzTraining.Controllers.UsersController", "rp": "DisprzTraining_UsersController.html", "cl": 35, "ucl": 0, "cal": 35, "tl": 70, "cb": 4, "tb": 4, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
       { "name": "DisprzTraining.DataAccess.AppointmentRepository", "rp": "DisprzTraining_AppointmentRepository.html", "cl": 52, "ucl": 0, "cal": 52, "tl": 90, "cb": 2, "tb": 2, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
       { "name": "DisprzTraining.DataAccess.UserRepository", "rp": "DisprzTraining_UserRepository.html", "cl": 22, "ucl": 0, "cal": 22, "tl": 41, "cb": 0, "tb": 0, "cm": 0, "tm": 0, "lch": [], "bch": [], "mch": [], "hc": [], "metrics": { } },
