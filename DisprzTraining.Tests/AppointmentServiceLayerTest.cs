@@ -2330,7 +2330,7 @@ namespace DisprzTraining.Tests
 
             // Assert
             Assert.False(result.Success);
-            Assert.Contains("timezone", result.Error.ToLower());
+            Assert.Contains("timezone", result.Error?.ToLower());
         }
 
         [Fact]
@@ -3671,11 +3671,13 @@ namespace DisprzTraining.Tests
             var result = await _service.CreateAppointmentAsync(dto, userId);
 
             // Assert
+            // Most explicit approach
             Assert.False(result.Success);
-            // Should hit the generic exception handler in ValidateAppointmentTime
-            Assert.True(result.Error == "Error validating appointment time" ||
+            Assert.NotNull(result.Error);
+            Assert.True(result.Error.Equals("Error validating appointment time") ||
                         result.Error.Contains("Cannot book appointments in the past"));
             Assert.Null(result.Appointment);
+
         }
 
         [Fact]
