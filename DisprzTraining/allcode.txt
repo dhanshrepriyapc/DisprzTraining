@@ -1,0 +1,1959 @@
+﻿using DisprzTraining.Models;
+using DisprzTraining.DataAccess;
+using DisprzTraining.Business;
+using Microsoft.EntityFrameworkCore;
+using DisprzTraining.Utils;
+var builder = WebApplication.CreateBuilder(args);
+
+// Add DbContext
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    
+// Add dependency injection 
+builder.Services.ConfigureDependencyInjections();
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReactApp",
+        policy => policy.WithOrigins("http://localhost:3000") // React dev server
+                        .AllowAnyMethod()
+                        .AllowAnyHeader());
+});
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+// Use CORS before MapControllers
+app.UseHttpsRedirection(); 
+app.UseCors("AllowReactApp");
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();
+using DisprzTraining.DataAccess;
+using DisprzTraining.DTOs;
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace DisprzTraining.Business
+{
+    public class AppointmentService : IAppointmentService
+    {
+        private readonly IAppointmentRepository _repository;
+
+        public AppointmentService(IAppointmentRepository repository)
+        {
+            _repository = repository;
+        }
+
+        // GET all appointments for a specific user
+            public async Task<List<AppointmentDto>> GetAppointmentsForUserAsync(int userId)
+        {
+            var user = await _repository.GetByIdAsync(userId); // Inject IUserRepository
+            var appointments = await _repository.GetByUserIdAsync(userId);
+
+            var userTimeZone = TimeZoneInfo.FindSystemTimeZoneById(user?.TimeZoneId ?? TimeZoneInfo.Local.Id);
+
+            return appointments.Select(a =>
+            {
+                var dto = MapToDto(a);
+                dto.StartTime = TimeZoneInfo.ConvertTimeFromUtc(a.StartTime, userTimeZone);
+                dto.EndTime = TimeZoneInfo.ConvertTimeFromUtc(a.EndTime, userTimeZone);
+                return dto;
+            }).ToList();
+        }
+
+        // GET appointment by ID
+        public async Task<Appointment?> GetAppointmentByIdAsync(int id)
+        {
+            return await _repository.GetByIdAsync(id);
+        }
+
+        // CREATE new appointment for a specific user
+        public async Task<(bool Success, string? Error, Appointment Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId)
+        {
+            try
+            {
+                // Optional: check for overlapping appointments for the same user
+                var overlap = await _repository.GetByUserIdAsync(userId);
+                if (overlap.Any(a => dto.StartTime < a.EndTime && dto.EndTime > a.StartTime))
+                    return (false, "Appointment time overlaps with existing appointment", null!);
+
+                var appointment = new Appointment
+                {
+                    Title = dto.Title,
+                    StartTime = dto.StartTime,
+                    EndTime = dto.EndTime,
+                    UserId = userId
+                };
+
+                await _repository.AddAsync(appointment);
+                return (true, null, appointment);
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message, null!);
+            }
+        }
+
+        // UPDATE appointment (only by the owner)
+        public async Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto, int userId)
+        {
+            var appointment = await _repository.GetByIdAsync(id);
+            if (appointment == null) return (false, "Not found");
+            if (appointment.UserId != userId) return (false, "Unauthorized");
+
+            // Optional: check overlapping
+            var userAppointments = await _repository.GetByUserIdAsync(userId);
+            if (userAppointments.Any(a => a.Id != id && dto.StartTime < a.EndTime && dto.EndTime > a.StartTime))
+                return (false, "Appointment time overlaps with existing appointment");
+
+            appointment.Title = dto.Title;
+            appointment.StartTime = dto.StartTime;
+            appointment.EndTime = dto.EndTime;
+
+            await _repository.UpdateAsync(appointment);
+            return (true, null);
+        }
+
+        // In AppointmentRepositor
+
+
+        // DELETE appointment (only by the owner)
+        public async Task<(bool Success, string? Error)> DeleteAppointmentAsync(int id, int userId)
+        {
+            var appointment = await _repository.GetByIdAsync(id);
+            if (appointment == null) return (false, "Not found");
+            if (appointment.UserId != userId) return (false, "Unauthorized");
+
+            await _repository.DeleteAsync(appointment);
+            return (true, null);
+        }
+        // SEARCH appointments by keyword (title, description, location, attendees, or username)
+        public async Task<List<AppointmentDto>> SearchAppointmentsAsync(string keyword, int? userId)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+                return new List<AppointmentDto>();
+
+            var results = await _repository.SearchAsync(keyword, userId);
+
+            return results.Select(a => new AppointmentDto
+            {
+                Id = a.Id,
+                Title = a.Title,
+                StartTime = a.StartTime,
+                EndTime = a.EndTime,
+                UserId = a.UserId
+            }).ToList();
+        }
+        public async Task<(bool Success, string? Error)> UpdateAppointmentTypeAsync(int id, string? type, string? colorCode, int userId)
+        {
+            var appointment = await _repository.GetByIdAsync(id);
+            if (appointment == null) return (false, "Not found");
+            if (appointment.UserId != userId) return (false, "Unauthorized");
+
+            appointment.Type = type;
+            appointment.ColorCode = colorCode;
+
+            await _repository.UpdateAsync(appointment);
+            return (true, null);
+        }
+        // GET recurring appointments within a date range
+       public async Task<List<AppointmentDto>> GetRecurringAppointmentsAsync(int userId, DateTime start, DateTime end)
+{
+    var user = await _repository.GetByIdAsync(userId);
+    var userTimeZone = TimeZoneInfo.FindSystemTimeZoneById(user?.TimeZoneId ?? TimeZoneInfo.Local.Id);
+
+    var appointments = await _repository.GetByUserIdAsync(userId);
+    var result = new List<AppointmentDto>();
+
+    foreach (var a in appointments)
+    {
+        if (a.Recurrence == RecurrenceType.None)
+        {
+            if (a.StartTime >= start && a.StartTime <= end)
+            {
+                var dto = MapToDto(a);
+                dto.StartTime = TimeZoneInfo.ConvertTimeFromUtc(a.StartTime, userTimeZone);
+                dto.EndTime = TimeZoneInfo.ConvertTimeFromUtc(a.EndTime, userTimeZone);
+                result.Add(dto);
+            }
+            continue;
+        }
+
+        DateTime occurrence = a.StartTime;
+        while (occurrence <= end && (a.RecurrenceEndDate == null || occurrence <= a.RecurrenceEndDate.Value))
+        {
+            if (occurrence >= start)
+            {
+                var dto = MapToDto(a);
+                dto.StartTime = TimeZoneInfo.ConvertTimeFromUtc(occurrence, userTimeZone);
+                dto.EndTime = TimeZoneInfo.ConvertTimeFromUtc(occurrence + (a.EndTime - a.StartTime), userTimeZone);
+                result.Add(dto);
+            }
+
+            occurrence = a.Recurrence switch
+            {
+                RecurrenceType.Daily => occurrence.AddDays(a.RecurrenceInterval ?? 1),
+                RecurrenceType.Weekly => occurrence.AddDays(7 * (a.RecurrenceInterval ?? 1)),
+                RecurrenceType.Monthly => occurrence.AddMonths(a.RecurrenceInterval ?? 1),
+                _ => end.AddDays(1)
+            };
+        }
+    }
+
+    return result.OrderBy(a => a.StartTime).ToList();
+}
+
+        private AppointmentDto MapToDto(Appointment a) => new AppointmentDto
+        {
+            Id = a.Id,
+            Title = a.Title,
+            StartTime = a.StartTime,
+            EndTime = a.EndTime,
+            UserId = a.UserId,
+            Type = a.Type,
+            ColorCode = a.ColorCode
+        };
+
+    }
+}
+using DisprzTraining.DTOs;
+using DisprzTraining.Models;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace DisprzTraining.Business
+{
+    public interface IAppointmentService
+    {
+        Task<List<AppointmentDto>> GetAppointmentsForUserAsync(int userId);
+        Task<Appointment?> GetAppointmentByIdAsync(int id);
+        Task<(bool Success, string? Error, Appointment Appointment)> CreateAppointmentAsync(AppointmentDto dto, int userId);
+        Task<(bool Success, string? Error)> UpdateAppointmentAsync(int id, AppointmentDto dto, int userId);
+        Task<(bool Success, string? Error)> DeleteAppointmentAsync(int id, int userId);
+        Task<List<AppointmentDto>> SearchAppointmentsAsync(string keyword, int? userId);
+        Task<(bool Success, string? Error)> UpdateAppointmentTypeAsync(int id, string? type, string? colorCode, int userId);
+        Task<List<AppointmentDto>> GetRecurringAppointmentsAsync(int userId, DateTime start, DateTime end);
+    }
+}
+using DisprzTraining.DataAccess;
+using DisprzTraining.Models;
+
+namespace DisprzTraining.Business
+{
+    public interface IUserService
+    {
+
+        // Authenticate user
+        Task<User?> AuthenticateAsync(string username, string password);
+        Task<User> RegisterAsync(string username, string password, string? timeZoneId = null);
+        Task<(bool Success, string? Error)> UpdateTimeZoneAsync(int userId, string timeZoneId);  
+    }
+}
+using DisprzTraining.DataAccess;
+using DisprzTraining.Models;
+
+namespace DisprzTraining.Business
+{
+    public class UserService
+    {
+        private readonly IUserRepository _repository;
+
+        public UserService(IUserRepository repository)
+        {
+            _repository = repository;
+        }
+
+        // Authenticate user
+        public async Task<User?> AuthenticateAsync(string username, string password)
+        {
+            var user = await _repository.GetByUsernameAsync(username);
+            if (user == null) return null;
+
+            // For now plain text check (later replace with hashing)
+            return user.PasswordHash == password ? user : null;
+        }
+
+        // Register new user
+        public async Task<User> RegisterAsync(string username, string password, string? timeZoneId = null)
+        {
+            var existing = await _repository.GetByUsernameAsync(username);
+            if (existing != null) throw new Exception("Username already exists");
+
+            var user = new User
+            {
+                Username = username,
+                PasswordHash = password,
+                TimeZoneId = timeZoneId ?? TimeZoneInfo.Local.Id // store user's time zone
+            };
+
+            await _repository.AddAsync(user);
+            return user;
+        }
+
+        // Update user's time zone
+        public async Task<(bool Success, string? Error)> UpdateTimeZoneAsync(int userId, string timeZoneId)
+        {
+            var user = await _repository.GetByIdAsync(userId);
+            if (user == null) return (false, "User not found");
+
+            try
+            {
+                // Validate timezone
+                TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+                user.TimeZoneId = timeZoneId;
+                await _repository.UpdateAsync(user);
+                return (true, null);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return (false, "Invalid time zone ID");
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message);
+            }
+        }
+    }
+}
+// <autogenerated />
+using System;
+using System.Reflection;
+[assembly: global::System.Runtime.Versioning.TargetFrameworkAttribute(".NETCoreApp,Version=v10.0", FrameworkDisplayName = ".NET 10.0")]
+//------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+//------------------------------------------------------------------------------
+
+using System;
+using System.Reflection;
+
+[assembly: System.Reflection.AssemblyCompanyAttribute("IUserServices")]
+[assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
+[assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyProductAttribute("IUserServices")]
+[assembly: System.Reflection.AssemblyTitleAttribute("IUserServices")]
+[assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
+
+// Generated by the MSBuild WriteCodeFragment class.
+
+// <auto-generated/>
+global using global::System;
+global using global::System.Collections.Generic;
+global using global::System.IO;
+global using global::System.Linq;
+global using global::System.Net.Http;
+global using global::System.Threading;
+global using global::System.Threading.Tasks;
+using DisprzTraining.Business;
+using DisprzTraining.DTOs;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+
+namespace DisprzTraining.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    [Authorize] // Require authentication for all endpoints
+    public class AppointmentsController : ControllerBase
+    {
+        private readonly IAppointmentService _service;
+
+        public AppointmentsController(IAppointmentService service)
+        {
+            _service = service;
+        }
+
+        // Helper to get UserId from JWT claims
+        private int GetUserId() => int.Parse(User.FindFirstValue("id")!);
+
+        // GET: api/appointments
+        [HttpGet]
+        public async Task<IActionResult> GetAppointments()
+        {
+            var userId = GetUserId();
+            var result = await _service.GetAppointmentsForUserAsync(userId);
+            return Ok(result);
+        }
+
+        // POST: api/appointments
+        [HttpPost]
+        public async Task<IActionResult> CreateAppointment([FromBody] AppointmentDto dto)
+        {
+            var userId = GetUserId();
+            var (success, error, appointment) = await _service.CreateAppointmentAsync(dto, userId);
+
+            if (!success)
+                return Conflict(new { message = error });
+
+            return CreatedAtAction(nameof(GetById), new { id = appointment.Id }, appointment);
+        }
+
+        // GET: api/appointments/5
+        [HttpGet("{id}")]
+        public async Task<ActionResult<AppointmentDto>> GetById(int id)
+        {
+            var appointment = await _service.GetAppointmentByIdAsync(id);
+            if (appointment == null || appointment.UserId != GetUserId()) return NotFound();
+
+            var dto = new AppointmentDto
+            {
+                Id = appointment.Id,
+                Title = appointment.Title,
+                StartTime = appointment.StartTime,
+                EndTime = appointment.EndTime,
+                UserId = appointment.UserId
+            };
+
+            return Ok(dto);
+        }
+
+        // PUT: api/appointments/5
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateAppointment(int id, [FromBody] AppointmentDto dto)
+        {
+            var userId = GetUserId();
+            var (success, error) = await _service.UpdateAppointmentAsync(id, dto, userId);
+
+            if (!success)
+            {
+                if (error == "Not found") return NotFound();
+                if (error == "Unauthorized") return Unauthorized(new { message = "Cannot edit another user's appointment" });
+                return Conflict(new { message = error });
+            }
+
+            return Ok(new { message = "Appointment updated successfully" });
+        }
+
+        // DELETE: api/appointments/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteAppointment(int id)
+        {
+            var userId = GetUserId();
+            var (success, error) = await _service.DeleteAppointmentAsync(id, userId);
+
+            if (!success)
+            {
+                if (error == "Not found") return NotFound();
+                if (error == "Unauthorized") return Unauthorized(new { message = "Cannot delete another user's appointment" });
+            }
+
+            return NoContent();
+        }
+
+        // GET: api/appointments/search?keyword=meeting
+        [HttpGet("search")]
+        public async Task<IActionResult> Search([FromQuery] string keyword)
+        {
+            var userId = GetUserId();
+            var results = await _service.SearchAppointmentsAsync(keyword, userId);
+            return Ok(results);
+        }
+
+        // PUT: api/appointments/5/type
+        [HttpPut("{id}/type")]
+        public async Task<IActionResult> UpdateTypeAndColor(int id, [FromBody] AppointmentDto dto)
+        {
+            var userId = GetUserId();
+            var (success, error) = await _service.UpdateAppointmentTypeAsync(id, dto.Type, dto.ColorCode, userId);
+
+            if (!success)
+            {
+                if (error == "Not found") return NotFound();
+                if (error == "Unauthorized") return Unauthorized(new { message = "Cannot edit another user's appointment" });
+                return Conflict(new { message = error });
+            }
+
+            return Ok(new { message = "Appointment type/color updated successfully" });
+        }
+
+        // GET: api/appointments/recurring?start=2025-09-20&end=2025-09-27
+        [HttpGet("recurring")]
+        public async Task<IActionResult> GetRecurringAppointments([FromQuery] DateTime start, [FromQuery] DateTime end)
+        {
+            if (start > end)
+                return BadRequest(new { message = "Start date must be before end date" });
+
+            var userId = GetUserId();
+            var appointments = await _service.GetRecurringAppointmentsAsync(userId, start, end);
+
+            return Ok(appointments);
+        }
+    }
+}
+using DisprzTraining.Business;
+using DisprzTraining.DTOs;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+
+namespace DisprzTraining.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class UsersController : ControllerBase
+    {
+        private readonly UserService _service;
+        private readonly IConfiguration _configuration;
+
+        public UsersController(UserService service, IConfiguration configuration)
+        {
+            _service = service;
+            _configuration = configuration;
+        }
+        
+        // Login user - api/users/login
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginDto dto)
+        {
+            var user = await _service.AuthenticateAsync(dto.Username, dto.Password);
+            if (user == null) return Unauthorized(new { message = "Invalid credentials" });
+
+            // Generate JWT token
+            var token = GenerateJwtToken(user);
+
+            return Ok(new
+            {
+                User = new UserDto { Id = user.Id, Username = user.Username },
+                Token = token
+            });
+        }
+
+        // Register user - api/users/register
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] LoginDto dto)
+        {
+            try
+            {
+                var user = await _service.RegisterAsync(dto.Username, dto.Password);
+                return CreatedAtAction(nameof(Register), new { id = user.Id }, new UserDto { Id = user.Id, Username = user.Username });
+            }
+            catch (Exception ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
+        }
+
+        // Private helper to generate JWT token
+        private string GenerateJwtToken(Models.User user)
+        {
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"] ?? "YourSecretKey123!"));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, user.Username),
+                new Claim("id", user.Id.ToString())
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: _configuration["Jwt:Issuer"] ?? "MyApp",
+                audience: _configuration["Jwt:Audience"] ?? "MyApp",
+                claims: claims,
+                expires: DateTime.UtcNow.AddHours(8),
+                signingCredentials: creds
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+    }
+}
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+namespace DisprzTraining.DataAccess
+{
+    public class AppointmentRepository : IAppointmentRepository
+    {
+        private readonly AppDbContext _context;
+
+        public AppointmentRepository(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        // GET all appointments (optional)
+        public async Task<List<Appointment>> GetAllAsync()
+        {
+            return await _context.Appointments.ToListAsync();
+        }
+
+        // GET appointment by ID
+        public async Task<Appointment?> GetByIdAsync(int id)
+        {
+            return await _context.Appointments.FindAsync(id);
+        }
+
+        // GET all appointments for a specific user
+        public async Task<List<Appointment>> GetByUserIdAsync(int userId)
+        {
+            return await _context.Appointments
+                                 .Where(a => a.UserId == userId)
+                                 .OrderBy(a => a.StartTime)
+                                 .ToListAsync();
+        }
+
+        // ADD new appointment
+        public async Task AddAsync(Appointment appointment)
+        {
+            _context.Appointments.Add(appointment);
+            await _context.SaveChangesAsync();
+        }
+
+        // UPDATE existing appointment
+        public async Task UpdateAsync(Appointment appointment)
+        {
+            _context.Appointments.Update(appointment);
+            await _context.SaveChangesAsync();
+        }
+
+        // DELETE appointment
+        public async Task DeleteAsync(Appointment appointment)
+        {
+            _context.Appointments.Remove(appointment);
+            await _context.SaveChangesAsync();
+        }
+        public async Task<List<Appointment>> SearchAsync(string keyword, int? userId)
+        {
+            var query = _context.Appointments
+                .Include(a => a.User)
+                .AsQueryable();
+
+            if (userId.HasValue)
+                query = query.Where(a => a.UserId == userId.Value);
+
+            keyword = keyword.ToLower();
+
+            return await query
+                .Where(a =>
+                    a.Title.ToLower().Contains(keyword) ||
+                    (a.Description != null && a.Description.ToLower().Contains(keyword)) ||
+                    (a.Location != null && a.Location.ToLower().Contains(keyword)) ||
+                    (a.Attendees != null && a.Attendees.ToLower().Contains(keyword)) ||
+                    (a.User != null && a.User.Username.ToLower().Contains(keyword))
+                )
+                .ToListAsync();
+        }
+
+    }
+}
+
+using DisprzTraining.Models;
+namespace DisprzTraining.DataAccess
+{
+    public interface IAppointmentRepository
+    {
+        Task<List<Appointment>> GetAllAsync();
+        Task<Appointment?> GetByIdAsync(int id);
+        Task<List<Appointment>> GetByUserIdAsync(int userId);
+        Task AddAsync(Appointment appointment);
+        Task UpdateAsync(Appointment appointment);
+        Task DeleteAsync(Appointment appointment);
+        Task<List<Appointment>> SearchAsync(string keyword, int? userId);
+
+    }
+
+}
+using DisprzTraining.Models;
+
+namespace DisprzTraining.DataAccess
+{
+    public interface IUserRepository
+    {
+        Task<User?> GetByUsernameAsync(string username);
+        Task AddAsync(User user);
+        Task UpdateAsync(User user);
+        Task<User?> GetByIdAsync(int id);
+        Task<List<User>> GetAllAsync();
+
+    }
+}
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace DisprzTraining.DataAccess
+{
+    public class UserRepository : IUserRepository
+    {
+        private readonly AppDbContext _context;
+
+        public UserRepository(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        public async Task<List<User>> GetAllAsync()
+        {
+            return await _context.Users.ToListAsync();
+        }
+
+        public async Task<User?> GetByIdAsync(int id)
+        {
+            return await _context.Users.FindAsync(id);
+        }
+
+        public async Task<User?> GetByUsernameAsync(string username)
+        {
+            return await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
+        }
+
+        public async Task AddAsync(User user)
+        {
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task UpdateAsync(User user)
+        {
+            _context.Users.Update(user);
+            await _context.SaveChangesAsync();
+        }
+    }
+}
+public class AppointmentDto
+{
+    public enum RecurrenceType
+    {
+    None,
+    Daily,
+    Weekly,
+    Monthly
+    }
+    public int Id { get; set; }
+    public string? Title { get; set; }
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
+    public int UserId { get; set; }
+
+    public string? Description { get; set; }
+    public string? Location { get; set; }
+    public string? Attendees { get; set; }
+
+    public string? Type { get; set; }
+    public string? ColorCode { get; set; }
+    public RecurrenceType Recurrence { get; set; } = RecurrenceType.None;
+    public int? RecurrenceInterval { get; set; }
+    public DateTime? RecurrenceEndDate { get; set; }
+
+}
+namespace DisprzTraining.DTOs
+{
+    public class LoginDto
+    {
+        public string Username { get; set; } = null!;
+        public string Password { get; set; } = null!;
+    }
+}
+namespace DisprzTraining.DTOs
+{
+    public class UserDto
+    {
+        public int Id { get; set; }
+        public string Username { get; set; } = null!;
+    }
+}
+using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    /// <inheritdoc />
+    public partial class InitialCreate : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "Appointments",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Title = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    StartTime = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    EndTime = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Appointments", x => x.Id);
+                });
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "Appointments");
+        }
+    }
+}
+// <auto-generated />
+using System;
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20250915094730_InitialCreate")]
+    partial class InitialCreate
+    {
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "7.0.20")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Appointments");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddUserTable : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<int>(
+                name: "UserId",
+                table: "Appointments",
+                type: "int",
+                nullable: true);
+
+            migrationBuilder.CreateTable(
+                name: "Users",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Username = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    PasswordHash = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Users", x => x.Id);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Appointments_UserId",
+                table: "Appointments",
+                column: "UserId");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Appointments_Users_UserId",
+                table: "Appointments",
+                column: "UserId",
+                principalTable: "Users",
+                principalColumn: "Id");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropForeignKey(
+                name: "FK_Appointments_Users_UserId",
+                table: "Appointments");
+
+            migrationBuilder.DropTable(
+                name: "Users");
+
+            migrationBuilder.DropIndex(
+                name: "IX_Appointments_UserId",
+                table: "Appointments");
+
+            migrationBuilder.DropColumn(
+                name: "UserId",
+                table: "Appointments");
+        }
+    }
+}
+// <auto-generated />
+using System;
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20250916071257_AddUserTable")]
+    partial class AddUserTable
+    {
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "7.0.20")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Appointments");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.HasOne("DisprzTraining.Models.User", "User")
+                        .WithMany("Appointments")
+                        .HasForeignKey("UserId");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Navigation("Appointments");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddAppointmentDetails : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropForeignKey(
+                name: "FK_Appointments_Users_UserId",
+                table: "Appointments");
+
+            migrationBuilder.AlterColumn<int>(
+                name: "UserId",
+                table: "Appointments",
+                type: "int",
+                nullable: false,
+                defaultValue: 0,
+                oldClrType: typeof(int),
+                oldType: "int",
+                oldNullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "Attendees",
+                table: "Appointments",
+                type: "nvarchar(max)",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "Description",
+                table: "Appointments",
+                type: "nvarchar(max)",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "Location",
+                table: "Appointments",
+                type: "nvarchar(max)",
+                nullable: true);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Appointments_Users_UserId",
+                table: "Appointments",
+                column: "UserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropForeignKey(
+                name: "FK_Appointments_Users_UserId",
+                table: "Appointments");
+
+            migrationBuilder.DropColumn(
+                name: "Attendees",
+                table: "Appointments");
+
+            migrationBuilder.DropColumn(
+                name: "Description",
+                table: "Appointments");
+
+            migrationBuilder.DropColumn(
+                name: "Location",
+                table: "Appointments");
+
+            migrationBuilder.AlterColumn<int>(
+                name: "UserId",
+                table: "Appointments",
+                type: "int",
+                nullable: true,
+                oldClrType: typeof(int),
+                oldType: "int");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Appointments_Users_UserId",
+                table: "Appointments",
+                column: "UserId",
+                principalTable: "Users",
+                principalColumn: "Id");
+        }
+    }
+}
+// <auto-generated />
+using System;
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20250920124507_AddAppointmentDetails")]
+    partial class AddAppointmentDetails
+    {
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "7.0.20")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Attendees")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Location")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Appointments");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.HasOne("DisprzTraining.Models.User", "User")
+                        .WithMany("Appointments")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Navigation("Appointments");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddTypeAndColorToAppointments : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<string>(
+                name: "ColorCode",
+                table: "Appointments",
+                type: "nvarchar(max)",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "Type",
+                table: "Appointments",
+                type: "nvarchar(max)",
+                nullable: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "ColorCode",
+                table: "Appointments");
+
+            migrationBuilder.DropColumn(
+                name: "Type",
+                table: "Appointments");
+        }
+    }
+}
+// <auto-generated />
+using System;
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20250920125730_AddTypeAndColorToAppointments")]
+    partial class AddTypeAndColorToAppointments
+    {
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "7.0.20")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Attendees")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ColorCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Location")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Appointments");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.HasOne("DisprzTraining.Models.User", "User")
+                        .WithMany("Appointments")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Navigation("Appointments");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddRecurringAppointments : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<int>(
+                name: "Recurrence",
+                table: "Appointments",
+                type: "int",
+                nullable: false,
+                defaultValue: 0);
+
+            migrationBuilder.AddColumn<DateTime>(
+                name: "RecurrenceEndDate",
+                table: "Appointments",
+                type: "datetime2",
+                nullable: true);
+
+            migrationBuilder.AddColumn<int>(
+                name: "RecurrenceInterval",
+                table: "Appointments",
+                type: "int",
+                nullable: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "Recurrence",
+                table: "Appointments");
+
+            migrationBuilder.DropColumn(
+                name: "RecurrenceEndDate",
+                table: "Appointments");
+
+            migrationBuilder.DropColumn(
+                name: "RecurrenceInterval",
+                table: "Appointments");
+        }
+    }
+}
+// <auto-generated />
+using System;
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20250920130556_AddRecurringAppointments")]
+    partial class AddRecurringAppointments
+    {
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "7.0.20")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Attendees")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ColorCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Location")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Recurrence")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RecurrenceEndDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("RecurrenceInterval")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Appointments");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.HasOne("DisprzTraining.Models.User", "User")
+                        .WithMany("Appointments")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Navigation("Appointments");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddRecurrenceAndTimezoneToAppointment : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.AddColumn<string>(
+                name: "TimeZoneId",
+                table: "Users",
+                type: "nvarchar(max)",
+                nullable: false,
+                defaultValue: "");
+
+            migrationBuilder.AddColumn<string>(
+                name: "TimeZoneId",
+                table: "Appointments",
+                type: "nvarchar(max)",
+                nullable: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(
+                name: "TimeZoneId",
+                table: "Users");
+
+            migrationBuilder.DropColumn(
+                name: "TimeZoneId",
+                table: "Appointments");
+        }
+    }
+}
+// <auto-generated />
+using System;
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20250920132243_AddRecurrenceAndTimezoneToAppointment")]
+    partial class AddRecurrenceAndTimezoneToAppointment
+    {
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "7.0.20")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Attendees")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ColorCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Location")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Recurrence")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RecurrenceEndDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("RecurrenceInterval")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TimeZoneId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Appointments");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.HasOne("DisprzTraining.Models.User", "User")
+                        .WithMany("Appointments")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Navigation("Appointments");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+// <auto-generated />
+using System;
+using DisprzTraining.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+#nullable disable
+
+namespace DisprzTraining.Migrations
+{
+    [DbContext(typeof(AppDbContext))]
+    partial class AppDbContextModelSnapshot : ModelSnapshot
+    {
+        protected override void BuildModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "7.0.20")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Attendees")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ColorCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Location")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Recurrence")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RecurrenceEndDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("RecurrenceInterval")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TimeZoneId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Appointments");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.Appointment", b =>
+                {
+                    b.HasOne("DisprzTraining.Models.User", "User")
+                        .WithMany("Appointments")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DisprzTraining.Models.User", b =>
+                {
+                    b.Navigation("Appointments");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
+using Microsoft.EntityFrameworkCore;
+
+namespace DisprzTraining.Models
+{
+    public class AppDbContext : DbContext
+    {
+        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+        public DbSet<Appointment> Appointments { get; set; }
+        public DbSet<User> Users { get; set; }
+    }
+}
+namespace DisprzTraining.Models
+{
+  public enum RecurrenceType
+{
+    None,
+    Daily,
+    Weekly,
+    Monthly
+}
+  public class Appointment
+  {
+    public int Id { get; set; }        // Unique ID for the appointment
+    public string Title { get; set; } = string.Empty;  // Name of the appointment
+    public DateTime StartTime { get; set; }  // Start time of the appointment
+    public DateTime EndTime { get; set; }    // End time of the appointment
+                                             // Time of the appointment
+                                             // New fields for user relationship
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    public string? Description { get; set; }
+    public string? Location { get; set; }
+    public string? Attendees { get; set; }
+    public string? Type { get; set; }       // e.g., "Personal", "Professional", "Meeting"
+    public string? ColorCode { get; set; }  // e.g., "#FF5733"
+    // Recurrence
+    public RecurrenceType Recurrence { get; set; } = RecurrenceType.None;
+    public int? RecurrenceInterval { get; set; } // e.g., every 2 weeks
+    public DateTime? RecurrenceEndDate { get; set; }
+    public string? TimeZoneId { get; set; }  
+  }
+}
+using System.ComponentModel.DataAnnotations;
+
+namespace DisprzTraining.Models
+{
+    public class User
+    {
+        public int Id { get; set; }
+
+        [Required]
+        public string Username { get; set; } = null!;
+
+        [Required]
+        public string PasswordHash { get; set; } = null!; // store hashed password
+
+        // Optional: list of appointments for this user
+        public List<Appointment> Appointments { get; set; } = new();
+        public string TimeZoneId { get; set; } = TimeZoneInfo.Local.Id; // default to server timezone
+    }
+}
+// <autogenerated />
+using System;
+using System.Reflection;
+[assembly: global::System.Runtime.Versioning.TargetFrameworkAttribute(".NETCoreApp,Version=v7.0", FrameworkDisplayName = ".NET 7.0")]
+//------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+//------------------------------------------------------------------------------
+
+using System;
+using System.Reflection;
+
+[assembly: Microsoft.Extensions.Configuration.UserSecrets.UserSecretsIdAttribute("d9468ecc-3a02-4e61-a161-dcdf9d82f1b1")]
+[assembly: System.Reflection.AssemblyCompanyAttribute("DisprzTraining")]
+[assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
+[assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyProductAttribute("DisprzTraining")]
+[assembly: System.Reflection.AssemblyTitleAttribute("DisprzTraining")]
+[assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
+
+// Generated by the MSBuild WriteCodeFragment class.
+
+// <auto-generated/>
+global using global::Microsoft.AspNetCore.Builder;
+global using global::Microsoft.AspNetCore.Hosting;
+global using global::Microsoft.AspNetCore.Http;
+global using global::Microsoft.AspNetCore.Routing;
+global using global::Microsoft.Extensions.Configuration;
+global using global::Microsoft.Extensions.DependencyInjection;
+global using global::Microsoft.Extensions.Hosting;
+global using global::Microsoft.Extensions.Logging;
+global using global::System;
+global using global::System.Collections.Generic;
+global using global::System.IO;
+global using global::System.Linq;
+global using global::System.Net.Http;
+global using global::System.Net.Http.Json;
+global using global::System.Threading;
+global using global::System.Threading.Tasks;
+//------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+//------------------------------------------------------------------------------
+
+using System;
+using System.Reflection;
+
+[assembly: Microsoft.AspNetCore.Mvc.ApplicationParts.ApplicationPartAttribute("Microsoft.AspNetCore.OpenApi")]
+[assembly: Microsoft.AspNetCore.Mvc.ApplicationParts.ApplicationPartAttribute("Swashbuckle.AspNetCore.SwaggerGen")]
+
+// Generated by the MSBuild WriteCodeFragment class.
+
+using DisprzTraining.Business;
+using DisprzTraining.DataAccess;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using System;
+
+namespace DisprzTraining.Utils
+{
+    public static class ConfigureDependenciesExtension
+    {
+        public static void ConfigureDependencyInjections(this IServiceCollection services)
+        {
+            services.AddHttpContextAccessor();
+
+            services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+            services.AddScoped<IAppointmentService, AppointmentService>();
+            services.AddScoped<UserRepository>();
+            services.AddScoped<UserService>();
+
+        }
+    }
+}

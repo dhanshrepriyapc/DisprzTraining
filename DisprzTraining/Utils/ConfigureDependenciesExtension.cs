@@ -12,8 +12,11 @@ namespace DisprzTraining.Utils
         {
             services.AddHttpContextAccessor();
 
-            services.AddScoped<IHelloWorldBL, HelloWorldBL>();
-            services.AddScoped<IHelloWorldDAL, HelloWorldDAL>();
+            services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+            services.AddScoped<IAppointmentService, AppointmentService>();
+            services.AddScoped<IUserRepository, UserRepository>();
+            services.AddScoped<IUserService, UserService>();
+
         }
     }
 }
